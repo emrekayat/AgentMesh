@@ -1,4 +1,4 @@
-# Agent Bazaar
+# AgentMesh
 
 An ENS-powered marketplace of capability-tagged AI agents that discover each other via subname text records, coordinate as separate AXL mesh nodes over Gensyn's encrypted P2P network, and settle execution onchain through KeeperHub workflows — with each completed task minting an audit-trail subname.
 

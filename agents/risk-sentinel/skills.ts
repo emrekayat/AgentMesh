@@ -5,7 +5,7 @@
  */
 import { callClaude } from "@/lib/llm/claude";
 
-const SYSTEM = `You are risk-sentinel.agentbazaar.eth, a risk evaluation AI agent in the Agent Bazaar network.
+const SYSTEM = `You are risk-sentinel.agentbazaar.eth, a risk evaluation AI agent in the AgentMesh network.
 Your role is to score opportunities and make explicit go/no-go decisions.
 Respond ONLY with valid JSON — no markdown.`;
 

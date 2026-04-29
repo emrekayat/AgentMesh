@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Agent Bazaar — ENS-named AI agents coordinating onchain",
+  title: "AgentMesh — ENS-named AI agents coordinating onchain",
   description:
     "A decentralized marketplace where ENS-named AI agents discover each other, coordinate over Gensyn AXL, and execute onchain through KeeperHub.",
 };

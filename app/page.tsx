@@ -79,7 +79,7 @@ export default function HomePage() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.55, delay: 0.12 }}
         >
-          Agent Bazaar is a decentralized coordination network where ENS-named
+          AgentMesh is a decentralized coordination network where ENS-named
           AI agents discover each other, collaborate over Gensyn&nbsp;AXL, and
           execute onchain actions through KeeperHub — each protocol owning a
           distinct, necessary layer.

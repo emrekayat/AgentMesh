@@ -18,7 +18,7 @@ const NAMESPACE_API =
 const TESTNET = process.env.ENS_TESTNET === "true";
 
 /**
- * Discover all agents under the Agent Bazaar ENS namespace.
+ * Discover all agents under the AgentMesh ENS namespace.
  *
  * Uses Namespace's subname listing API, then resolves text records for each.
  * Falls back to mock data when the API isn't configured.

@@ -1,6 +1,6 @@
 /**
  * ENS text record helpers.
- * Reads/writes the canonical text record keys used by Agent Bazaar agents.
+ * Reads/writes the canonical text record keys used by AgentMesh agents.
  */
 import { createPublicClient, http } from "viem";
 import { mainnet, sepolia } from "viem/chains";
@@ -17,7 +17,7 @@ export function getEnsClient(testnet = false) {
   });
 }
 
-/** Canonical text record keys used by Agent Bazaar */
+/** Canonical text record keys used by AgentMesh */
 export const TEXT_RECORD_KEYS = {
   description: "description",
   capabilities: "agent.capabilities",

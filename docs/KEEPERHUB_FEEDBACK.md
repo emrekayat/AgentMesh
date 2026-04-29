@@ -1,10 +1,10 @@
 # KeeperHub Builder Feedback
 
-Feedback collected during the Agent Bazaar build (ETHGlobal OpenAgents hackathon, 2026-04-28/29).
+Feedback collected during the AgentMesh build (ETHGlobal OpenAgents hackathon, 2026-04-28/29).
 
 ## Integration context
 
-Agent Bazaar is a multi-agent coordination network. KeeperHub is the onchain execution layer — when the `execution-node` AI agent receives an approved task from `risk-sentinel` over Gensyn AXL, it fires a KeeperHub workflow to execute on Base Sepolia. The result (tx hash, block number, gas) is streamed back to the UI.
+AgentMesh is a multi-agent coordination network. KeeperHub is the onchain execution layer — when the `execution-node` AI agent receives an approved task from `risk-sentinel` over Gensyn AXL, it fires a KeeperHub workflow to execute on Base Sepolia. The result (tx hash, block number, gas) is streamed back to the UI.
 
 ---
 

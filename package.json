@@ -1,5 +1,5 @@
 {
-  "name": "agent-bazaar",
+  "name": "agent-mesh",
   "version": "0.1.0",
   "private": true,
   "description": "An ENS-powered marketplace of AI agents that coordinate over Gensyn AXL and execute onchain through KeeperHub.",

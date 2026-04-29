@@ -1,6 +1,6 @@
 #!/usr/bin/env tsx
 /**
- * Seed ENS subnames for Agent Bazaar agents via @thenamespace/offchain-manager SDK.
+ * Seed ENS subnames for AgentMesh agents via @thenamespace/offchain-manager SDK.
  * Usage: pnpm ens:seed
  */
 import "dotenv/config";
