@@ -1,0 +1,142 @@
+@import "tailwindcss";
+
+:root {
+  --background: #06080d;
+  --background-elevated: #0a0e16;
+  --foreground: #e6e9ee;
+  --foreground-muted: #94a0b3;
+  --foreground-dim: #5b6577;
+
+  --card: #0b101a;
+  --card-elevated: #0f1623;
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.14);
+
+  --ens: #7c3aed;
+  --ens-soft: rgba(124, 58, 237, 0.12);
+  --ens-glow: rgba(124, 58, 237, 0.45);
+
+  --gensyn: #22d3ee;
+  --gensyn-soft: rgba(34, 211, 238, 0.12);
+  --gensyn-glow: rgba(34, 211, 238, 0.4);
+
+  --keeperhub: #f59e0b;
+  --keeperhub-soft: rgba(245, 158, 11, 0.12);
+  --keeperhub-glow: rgba(245, 158, 11, 0.4);
+
+  --success: #34d399;
+  --warning: #fbbf24;
+  --danger: #f87171;
+  --info: #60a5fa;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-background-elevated: var(--background-elevated);
+  --color-foreground: var(--foreground);
+  --color-foreground-muted: var(--foreground-muted);
+  --color-foreground-dim: var(--foreground-dim);
+
+  --color-card: var(--card);
+  --color-card-elevated: var(--card-elevated);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+
+  --color-ens: var(--ens);
+  --color-ens-soft: var(--ens-soft);
+  --color-ens-glow: var(--ens-glow);
+  --color-gensyn: var(--gensyn);
+  --color-gensyn-soft: var(--gensyn-soft);
+  --color-gensyn-glow: var(--gensyn-glow);
+  --color-keeperhub: var(--keeperhub);
+  --color-keeperhub-soft: var(--keeperhub-soft);
+  --color-keeperhub-glow: var(--keeperhub-glow);
+
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-info: var(--info);
+
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+html,
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  background-image:
+    radial-gradient(ellipse 1200px 600px at 50% -10%, rgba(124, 58, 237, 0.15), transparent 60%),
+    radial-gradient(ellipse 800px 500px at 100% 0%, rgba(34, 211, 238, 0.08), transparent 60%),
+    radial-gradient(ellipse 800px 500px at 0% 100%, rgba(245, 158, 11, 0.06), transparent 60%);
+  background-attachment: fixed;
+}
+
+/* Subtle dotted grid */
+.bg-grid {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+.bg-dots {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1px);
+  background-size: 18px 18px;
+}
+
+.text-balance {
+  text-wrap: balance;
+}
+
+::selection {
+  background: rgba(124, 58, 237, 0.3);
+  color: #fff;
+}
+
+/* Glow utility */
+.glow-ens {
+  box-shadow: 0 0 32px var(--ens-glow);
+}
+.glow-gensyn {
+  box-shadow: 0 0 32px var(--gensyn-glow);
+}
+.glow-keeperhub {
+  box-shadow: 0 0 32px var(--keeperhub-glow);
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+/* Mono caret */
+.cursor-blink::after {
+  content: "▍";
+  display: inline-block;
+  margin-left: 2px;
+  animation: blink 1.1s steps(2, end) infinite;
+  color: var(--gensyn);
+}
+@keyframes blink {
+  to {
+    opacity: 0;
+  }
+}

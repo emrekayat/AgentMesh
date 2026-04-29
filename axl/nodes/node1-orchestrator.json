@@ -1,0 +1,11 @@
+{
+  "PrivateKeyPath": "../../axl/keys/orchestrator.pem",
+  "Peers": [
+    "tls://34.46.48.224:9001",
+    "tls://136.111.135.206:9001"
+  ],
+  "Listen": ["tls://127.0.0.1:9010"],
+  "api_port": 9002,
+  "bridge_addr": "127.0.0.1",
+  "tcp_port": 7001
+}
