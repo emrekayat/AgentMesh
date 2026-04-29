@@ -1,43 +1,34 @@
 #!/usr/bin/env tsx
 /**
- * Seed ENS subnames for Agent Bazaar agents.
- *
- * This script:
- *   1. Creates three agent subnames under agentbazaar.eth via Namespace.ninja
- *   2. Writes the canonical text records for each agent
- *   3. Optionally creates the tasks.agentbazaar.eth sub-namespace for audit subnames
- *
- * Prerequisites:
- *   - Sign up at https://namespace.ninja
- *   - Register agentbazaar.eth (or use a test name they provide)
- *   - Copy your API key into .env.local as NAMESPACE_API_KEY
- *   - Set AGENT_BAZAAR_ENS=agentbazaar.eth in .env.local
- *
- * Usage:
- *   pnpm ens:seed
+ * Seed ENS subnames for Agent Bazaar agents via @thenamespace/offchain-manager SDK.
+ * Usage: pnpm ens:seed
  */
-
 import "dotenv/config";
+import { createOffchainClient } from "@thenamespace/offchain-manager";
 
 const API_KEY = process.env.NAMESPACE_API_KEY;
-const API_URL =
-  process.env.NAMESPACE_API_URL ?? "https://api.namespace.ninja/v1";
 const PARENT_ENS = process.env.AGENT_BAZAAR_ENS ?? "agentbazaar.eth";
 
 if (!API_KEY) {
-  console.error(
-    "❌  NAMESPACE_API_KEY is not set in .env.local\n" +
-      "   Sign up at https://namespace.ninja and add the key."
-  );
+  console.error("❌  NAMESPACE_API_KEY is not set in .env");
   process.exit(1);
 }
 
-type SubnameEntry = {
+const client = createOffchainClient({
+  mode: "mainnet",
+  domainApiKeys: { [PARENT_ENS]: API_KEY },
+});
+
+type AgentEntry = {
   label: string;
   records: Record<string, string>;
 };
 
-const AGENTS: SubnameEntry[] = [
+function toTexts(records: Record<string, string>) {
+  return Object.entries(records).map(([key, value]) => ({ key, value }));
+}
+
+const AGENTS: AgentEntry[] = [
   {
     label: "research-alpha",
     records: {
@@ -84,41 +75,30 @@ const AGENTS: SubnameEntry[] = [
   },
 ];
 
-async function ensureSubname(label: string, parent: string): Promise<void> {
-  const res = await fetch(`${API_URL}/subnames`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${API_KEY}`,
-    },
-    body: JSON.stringify({ label, parent }),
-  });
+async function seedAgent(agent: AgentEntry): Promise<void> {
+  const subname = `${agent.label}.${PARENT_ENS}`;
+  process.stdout.write(`  ↳ ${subname} … `);
 
-  if (res.ok || res.status === 409) {
-    // 409 = already exists, that's fine
-    return;
-  }
-  const body = await res.text();
-  throw new Error(`Failed to create ${label}.${parent}: ${res.status} ${body}`);
-}
-
-async function writeTextRecords(
-  subname: string,
-  records: Record<string, string>
-): Promise<void> {
-  const res = await fetch(`${API_URL}/subnames/${subname}/text-records`, {
-    method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${API_KEY}`,
-    },
-    body: JSON.stringify({ records }),
-  });
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(
-      `Failed to write text records for ${subname}: ${res.status} ${body}`
-    );
+  try {
+    await client.createSubname({
+      parentName: PARENT_ENS,
+      label: agent.label,
+      texts: toTexts(agent.records),
+    });
+    console.log("✓ created");
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.toLowerCase().includes("already exists") || msg.includes("409")) {
+      /* subname exists — just update text records */
+      try {
+        await client.updateSubname(subname, { texts: toTexts(agent.records) });
+        console.log("✓ updated (already existed)");
+      } catch (updateErr) {
+        console.error(`✗ update failed: ${updateErr}`);
+      }
+    } else {
+      console.error(`✗\n    ${msg}`);
+    }
   }
 }
 
@@ -126,28 +106,25 @@ async function main() {
   console.log(`\n🌐  Seeding ENS subnames under ${PARENT_ENS}\n`);
 
   for (const agent of AGENTS) {
-    const subname = `${agent.label}.${PARENT_ENS}`;
-    process.stdout.write(`  ↳ ${subname} … `);
-    try {
-      await ensureSubname(agent.label, PARENT_ENS);
-      await writeTextRecords(subname, agent.records);
-      console.log("✓");
-    } catch (err) {
-      console.error(`✗\n    ${err}`);
+    await seedAgent(agent);
+  }
+
+  /* Also create the tasks.agentbazaar.eth sub-namespace for audit subnames */
+  const taskSubname = `tasks.${PARENT_ENS}`;
+  process.stdout.write(`  ↳ ${taskSubname} (audit namespace) … `);
+  try {
+    await client.createSubname({ parentName: PARENT_ENS, label: "tasks" });
+    console.log("✓ created");
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.toLowerCase().includes("already exists") || msg.includes("409")) {
+      console.log("✓ (already existed)");
+    } else {
+      console.error(`✗\n    ${msg}`);
     }
   }
 
-  // Also ensure the tasks sub-namespace exists
-  const taskParent = `tasks.${PARENT_ENS}`;
-  process.stdout.write(`  ↳ ${taskParent} (audit namespace) … `);
-  try {
-    await ensureSubname("tasks", PARENT_ENS);
-    console.log("✓");
-  } catch (err) {
-    console.error(`✗\n    ${err}`);
-  }
-
-  console.log(`\n✅  Done. Verify at https://app.ens.domains/${PARENT_ENS}\n`);
+  console.log(`\n✅  Done. Verify at https://app.namespace.ninja/${PARENT_ENS}\n`);
 }
 
 main().catch((err) => {

@@ -1,44 +1,80 @@
 /**
- * Thin wrapper around the Anthropic SDK with prompt caching enabled.
- * All agent LLM calls go through this module.
+ * LLM wrapper — uses Groq (free tier) when GROQ_API_KEY is set,
+ * falls back to Anthropic when ANTHROPIC_API_KEY is set.
+ * Interface is identical for all callers.
  */
-import Anthropic from "@anthropic-ai/sdk";
-import { env } from "@/agents/shared/env";
 
-let _client: Anthropic | null = null;
-
-export function getClaudeClient(): Anthropic {
-  if (!_client) {
-    _client = new Anthropic({ apiKey: env.anthropicApiKey });
-  }
-  return _client;
-}
-
-export const AGENT_MODEL = "claude-opus-4-7";
+export const AGENT_MODEL = process.env.GROQ_API_KEY
+  ? "llama-3.3-70b-versatile"
+  : "claude-haiku-4-5";
 
 export type ClaudeMessage = {
   role: "user" | "assistant";
   content: string;
 };
 
-/**
- * Call Claude with prompt caching on the system prompt.
- * Returns the text of the first content block.
- */
 export async function callClaude(
   system: string,
   messages: ClaudeMessage[],
   maxTokens = 1024
 ): Promise<string> {
-  const client = getClaudeClient();
+  if (process.env.GROQ_API_KEY) {
+    return callGroq(system, messages, maxTokens);
+  }
+  return callAnthropic(system, messages, maxTokens);
+}
+
+/* ── Groq (OpenAI-compatible, free tier) ──────────────────────────────────── */
+async function callGroq(
+  system: string,
+  messages: ClaudeMessage[],
+  maxTokens: number
+): Promise<string> {
+  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: AGENT_MODEL,
+      max_tokens: maxTokens,
+      messages: [
+        { role: "system", content: system },
+        ...messages,
+      ],
+    }),
+    signal: AbortSignal.timeout(30000),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Groq error ${res.status}: ${text}`);
+  }
+
+  const data = (await res.json()) as {
+    choices: { message: { content: string } }[];
+  };
+  return data.choices[0]?.message?.content ?? "";
+}
+
+/* ── Anthropic (fallback) ──────────────────────────────────────────────────── */
+async function callAnthropic(
+  system: string,
+  messages: ClaudeMessage[],
+  maxTokens: number
+): Promise<string> {
+  const { default: Anthropic } = await import("@anthropic-ai/sdk");
+  const client = new Anthropic({
+    apiKey: process.env.ANTHROPIC_API_KEY ?? "",
+  });
   const response = await client.messages.create({
-    model: AGENT_MODEL,
+    model: "claude-haiku-4-5",
     max_tokens: maxTokens,
     system: [
       {
         type: "text",
         text: system,
-        // Prompt caching: system prompt is cached after first call
         cache_control: { type: "ephemeral" },
       },
     ],
