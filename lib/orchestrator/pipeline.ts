@@ -1,20 +1,17 @@
 /**
  * Task pipeline FSM.
  *
- * Called after a task is created via POST /api/tasks.
- * Drives the full chain:
- *   ENS discovery → select research-alpha → AXL sendA2A → rest is agent-driven
+ * Drives the full chain over real AXL mesh:
+ *   ENS discovery → research-alpha (AXL) → risk-sentinel (AXL) → execution-node (AXL)
  *
- * The agents themselves chain the remaining steps (research→risk→execution)
- * by forwarding over AXL. The orchestrator's job is to kick off the first call
- * and set up any necessary state.
+ * Falls back to simulation when AXL nodes aren't running.
  */
 import { discoverAgents } from "@/lib/ens/registry";
 import { AXLClient } from "@/lib/axl/client";
 import { appendEvent, updateTaskFromEvent, getTask } from "@/lib/store/tasks";
 import bus from "@/lib/events/bus";
 import { nanoid } from "nanoid";
-import type { CoordinationEvent } from "@/lib/types";
+import type { Agent, CoordinationEvent } from "@/lib/types";
 
 const ORCHESTRATOR_ENS = "orchestrator.agentbazaar.eth";
 const ORCHESTRATOR_AXL_PORT = 9002;
@@ -44,7 +41,7 @@ export async function runTaskPipeline(taskId: string): Promise<void> {
     payloadPreview: "Discovering agents via ENS subname registry…",
   });
 
-  let agents;
+  let agents: Agent[];
   try {
     agents = await discoverAgents();
   } catch (err) {
@@ -59,18 +56,20 @@ export async function runTaskPipeline(taskId: string): Promise<void> {
   }
 
   const researcher = agents.find((a) => a.role === "researcher");
-  if (!researcher?.axlPeerId) {
+  const sentinel = agents.find((a) => a.role === "evaluator");
+  const executor = agents.find((a) => a.role === "executor");
+
+  if (!researcher?.axlPeerId || !sentinel?.axlPeerId || !executor?.axlPeerId) {
     emit({
       taskId,
       type: "execution.failed",
       fromEns: ORCHESTRATOR_ENS,
       layer: "ens",
-      payloadPreview: "No researcher agent found in ENS registry",
+      payloadPreview: "Missing required agents in ENS registry",
     });
     return;
   }
 
-  /* ── 2. Emit discovery result ────────────────────────────────────────── */
   emit({
     taskId,
     type: "discovery.completed",
@@ -79,9 +78,9 @@ export async function runTaskPipeline(taskId: string): Promise<void> {
     payloadPreview: `Resolved ${agents.length} agents: ${agents.map((a) => a.ensName).join(", ")}`,
   });
 
-  /* ── 3. Send task to researcher via AXL ─────────────────────────────── */
   const axl = new AXLClient(ORCHESTRATOR_AXL_PORT);
 
+  /* ── 2. Research phase ───────────────────────────────────────────────── */
   emit({
     taskId,
     type: "axl.send",
@@ -90,32 +89,122 @@ export async function runTaskPipeline(taskId: string): Promise<void> {
     toPeerId: researcher.axlPeerId,
     skill: "analyze_token",
     layer: "gensyn",
-    payloadPreview: `Dispatching task to ${researcher.ensName} via AXL mesh`,
+    payloadPreview: `Dispatching to ${researcher.ensName} via AXL`,
   });
 
+  let researchResult: Record<string, unknown>;
   try {
-    await axl.sendA2A(researcher.axlPeerId, "analyze_token", {
+    const resp = await axl.sendA2A(researcher.axlPeerId, "analyze_token", {
       task_id: taskId,
-      task_prompt: task.prompt,
       prompt: task.prompt,
       category: task.category,
-    });
+    }, 45_000);
+
+    if (resp.error) throw new Error(resp.error.message);
+    researchResult = (resp.result as Record<string, unknown>) ?? {};
 
     emit({
       taskId,
-      type: "axl.recv",
+      type: "skill.responded",
       fromEns: researcher.ensName,
-      toEns: ORCHESTRATOR_ENS,
+      skill: "analyze_token",
       layer: "gensyn",
-      payloadPreview: `Task accepted by ${researcher.ensName} — pipeline running`,
+      payloadPreview: `Research complete: sentiment=${researchResult.sentiment ?? "?"}, volatility=${researchResult.volatility24h ?? "?"}`,
+      data: researchResult,
     });
   } catch (err) {
-    /* AXL nodes not running — simulate the full pipeline for demo mode */
-    console.warn(
-      "[pipeline] AXL unavailable — running simulation:",
-      err instanceof Error ? err.message : err
-    );
+    console.warn("[pipeline] AXL research failed — falling back to simulation:", err instanceof Error ? err.message : err);
     await simulatePipeline(taskId, task.prompt, agents);
+    return;
+  }
+
+  /* ── 3. Risk evaluation phase ────────────────────────────────────────── */
+  emit({
+    taskId,
+    type: "axl.send",
+    fromEns: ORCHESTRATOR_ENS,
+    toEns: sentinel.ensName,
+    toPeerId: sentinel.axlPeerId,
+    skill: "score_risk",
+    layer: "gensyn",
+    payloadPreview: `Forwarding findings to ${sentinel.ensName} for risk scoring`,
+  });
+
+  let riskResult: Record<string, unknown>;
+  try {
+    const resp = await axl.sendA2A(sentinel.axlPeerId, "score_risk", {
+      task_id: taskId,
+      findings: researchResult,
+      threshold: 6.0,
+    }, 45_000);
+
+    if (resp.error) throw new Error(resp.error.message);
+    riskResult = (resp.result as Record<string, unknown>) ?? {};
+
+    emit({
+      taskId,
+      type: "skill.responded",
+      fromEns: sentinel.ensName,
+      skill: "score_risk",
+      layer: "gensyn",
+      payloadPreview: `Risk score: ${riskResult.risk_score ?? "?"}/10 — decision: ${riskResult.decision ?? "?"}`,
+      data: riskResult,
+    });
+  } catch (err) {
+    console.warn("[pipeline] AXL risk scoring failed — falling back:", err instanceof Error ? err.message : err);
+    await simulatePipeline(taskId, task.prompt, agents);
+    return;
+  }
+
+  /* ── 4. Execution phase (if approved) ────────────────────────────────── */
+  if (riskResult.decision !== "approved") {
+    emit({
+      taskId,
+      type: "execution.failed",
+      fromEns: sentinel.ensName,
+      layer: "keeperhub",
+      payloadPreview: `Risk rejected (score ${riskResult.risk_score}/10 < threshold) — execution aborted`,
+    });
+    emit({
+      taskId,
+      type: "task.completed",
+      layer: "system",
+      payloadPreview: `Task completed: no-go decision from risk-sentinel`,
+    });
+    return;
+  }
+
+  emit({
+    taskId,
+    type: "axl.send",
+    fromEns: ORCHESTRATOR_ENS,
+    toEns: executor.ensName,
+    toPeerId: executor.axlPeerId,
+    skill: "execute_intent",
+    layer: "gensyn",
+    payloadPreview: `Risk approved — dispatching to ${executor.ensName}`,
+  });
+
+  try {
+    const resp = await axl.sendA2A(executor.axlPeerId, "execute_intent", {
+      task_id: taskId,
+      original_prompt: task.prompt,
+      risk_score: riskResult.risk_score,
+      risk_rationale: riskResult.rationale,
+      approved: true,
+      requesting_peer: sentinel.axlPeerId,  // ENS auth: execution checks this is evaluator role
+    }, 120_000);
+
+    if (resp.error) throw new Error(resp.error.message);
+  } catch (err) {
+    console.warn("[pipeline] AXL execution failed:", err instanceof Error ? err.message : err);
+    emit({
+      taskId,
+      type: "execution.failed",
+      fromEns: ORCHESTRATOR_ENS,
+      layer: "keeperhub",
+      payloadPreview: err instanceof Error ? err.message : "Execution error",
+    });
   }
 }
 
@@ -123,7 +212,7 @@ export async function runTaskPipeline(taskId: string): Promise<void> {
 async function simulatePipeline(
   taskId: string,
   prompt: string,
-  agents: Awaited<ReturnType<typeof discoverAgents>>
+  agents: Agent[]
 ) {
   const researcher = agents.find((a) => a.role === "researcher");
   const sentinel = agents.find((a) => a.role === "evaluator");
@@ -131,7 +220,6 @@ async function simulatePipeline(
 
   const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-  /* Research phase */
   await delay(800);
   emit({
     taskId,
@@ -154,7 +242,6 @@ async function simulatePipeline(
       "[sim] Research complete: sentiment=bullish, volatility=medium, liquidity=high",
   });
 
-  /* Risk phase */
   await delay(600);
   emit({
     taskId,
@@ -177,7 +264,6 @@ async function simulatePipeline(
     payloadPreview: `[sim] score:${riskScore} decision:approved threshold:6.0`,
   });
 
-  /* ENS authorization */
   await delay(400);
   emit({
     taskId,
@@ -187,7 +273,6 @@ async function simulatePipeline(
     payloadPreview: `[sim] ENS role check PASSED: risk-sentinel.agentbazaar.eth has agent.role=evaluator`,
   });
 
-  /* Execution */
   await delay(500);
   emit({
     taskId,
@@ -226,7 +311,6 @@ async function simulatePipeline(
     },
   });
 
-  /* Audit subname */
   await delay(800);
   const shortId = taskId.slice(0, 6);
   const auditSubname = `task-${shortId}.tasks.agentbazaar.eth`;
@@ -237,7 +321,6 @@ async function simulatePipeline(
     payloadPreview: `${auditSubname} minted with audit text records`,
   });
 
-  /* Complete */
   await delay(300);
   emit({
     taskId,

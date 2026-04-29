@@ -1,9 +1,8 @@
 /**
  * KeeperHub REST API client.
- *
- * Wraps the KeeperHub workflow execution endpoints:
- *   POST /workflows/{id}/runs  — trigger a workflow
- *   GET  /workflows/{id}/runs/{runId} — poll status
+ * Base URL: https://app.keeperhub.com/api
+ * Auth: Bearer {kh_...} API key (org-scoped endpoints)
+ * Response format: { data: { ... } } or { error: { code, message } }
  */
 import type { WorkflowRun, WorkflowRunRequest } from "./types";
 
@@ -11,9 +10,9 @@ export class KeeperHubClient {
   private apiKey: string;
   private baseUrl: string;
 
-  constructor(apiKey: string, baseUrl = "https://api.keeperhub.com/v1") {
+  constructor(apiKey: string, baseUrl = "https://app.keeperhub.com/api") {
     this.apiKey = apiKey;
-    this.baseUrl = baseUrl;
+    this.baseUrl = baseUrl.replace(/\/$/, "");
   }
 
   private get headers() {
@@ -23,61 +22,95 @@ export class KeeperHubClient {
     };
   }
 
-  /** Trigger a pre-registered workflow */
+  private async request<T>(path: string, options?: RequestInit): Promise<T> {
+    const res = await fetch(`${this.baseUrl}${path}`, {
+      ...options,
+      headers: { ...this.headers, ...(options?.headers ?? {}) },
+    });
+
+    const text = await res.text().catch(() => "");
+    let body: unknown;
+    try { body = JSON.parse(text); } catch { body = { raw: text }; }
+
+    if (!res.ok) {
+      const msg = (body as { error?: { message?: string } })?.error?.message ?? text;
+      throw new Error(`KeeperHub ${res.status}: ${msg}`);
+    }
+
+    // Unwrap { data: ... } envelope
+    const data = (body as { data?: T })?.data;
+    return (data ?? body) as T;
+  }
+
+  /** Trigger a workflow execution */
   async triggerWorkflow(req: WorkflowRunRequest): Promise<WorkflowRun> {
-    const res = await fetch(
-      `${this.baseUrl}/workflows/${req.workflowId}/runs`,
+    const raw = await this.request<Record<string, unknown>>(
+      `/workflow/${req.workflowId}/execute`,
       {
         method: "POST",
-        headers: this.headers,
         body: JSON.stringify({ inputs: req.inputs ?? {} }),
         signal: AbortSignal.timeout(30000),
       }
     );
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      throw new Error(`KeeperHub trigger error ${res.status}: ${text}`);
-    }
-    return res.json();
+    return this.normalizeRun(raw, req.workflowId);
   }
 
-  /** Poll a workflow run until it reaches a terminal state */
+  /** Poll a workflow run until terminal state */
   async pollUntilDone(
     workflowId: string,
     runId: string,
     maxWaitMs = 120_000,
-    intervalMs = 3_000
+    intervalMs = 5_000
   ): Promise<WorkflowRun> {
     const deadline = Date.now() + maxWaitMs;
     while (Date.now() < deadline) {
-      const run = await this.getWorkflowRun(workflowId, runId);
-      if (
-        run.status === "succeeded" ||
-        run.status === "failed" ||
-        run.status === "cancelled"
-      ) {
-        return run;
+      try {
+        const run = await this.getExecution(runId, workflowId);
+        if (isTerminal(run.status)) return run;
+      } catch {
+        /* transient — keep polling */
       }
       await sleep(intervalMs);
     }
-    throw new Error(`KeeperHub workflow run ${runId} timed out after ${maxWaitMs}ms`);
+    throw new Error(`KeeperHub run ${runId} timed out after ${maxWaitMs}ms`);
   }
 
-  /** Get the current state of a workflow run */
-  async getWorkflowRun(workflowId: string, runId: string): Promise<WorkflowRun> {
-    const res = await fetch(
-      `${this.baseUrl}/workflows/${workflowId}/runs/${runId}`,
-      {
-        headers: this.headers,
-        signal: AbortSignal.timeout(10000),
-      }
-    );
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      throw new Error(`KeeperHub get run error ${res.status}: ${text}`);
+  /** Get execution by run ID — tries /executions/{id} then /workflow/{wfId}/runs/{id} */
+  async getExecution(runId: string, workflowId?: string): Promise<WorkflowRun> {
+    try {
+      const raw = await this.request<Record<string, unknown>>(
+        `/executions/${runId}`,
+        { signal: AbortSignal.timeout(10000) }
+      );
+      return this.normalizeRun(raw, workflowId ?? "");
+    } catch {
+      if (!workflowId) throw new Error(`No execution found for ${runId}`);
+      const raw = await this.request<Record<string, unknown>>(
+        `/workflow/${workflowId}/runs/${runId}`,
+        { signal: AbortSignal.timeout(10000) }
+      );
+      return this.normalizeRun(raw, workflowId);
     }
-    return res.json();
   }
+
+  private normalizeRun(raw: Record<string, unknown>, workflowId: string): WorkflowRun {
+    return {
+      id: String(raw.id ?? raw.runId ?? raw.run_id ?? `run_${Date.now()}`),
+      workflowId: String(raw.workflowId ?? raw.workflow_id ?? workflowId),
+      status: String(raw.status ?? "running") as WorkflowRun["status"],
+      txHash: (raw.txHash ?? raw.tx_hash ?? raw.transactionHash) as string | undefined,
+      blockNumber: (raw.blockNumber ?? raw.block_number) as number | undefined,
+      gasUsed: (raw.gasUsed ?? raw.gas_used) as string | undefined,
+      chain: String(raw.chain ?? raw.chainId ?? "base-sepolia"),
+      createdAt: String(raw.createdAt ?? raw.created_at ?? new Date().toISOString()),
+      updatedAt: String(raw.updatedAt ?? raw.updated_at ?? new Date().toISOString()),
+      logs: (raw.logs as string[]) ?? [],
+    };
+  }
+}
+
+function isTerminal(status: string): boolean {
+  return ["succeeded", "failed", "cancelled", "completed", "success", "error"].includes(status);
 }
 
 function sleep(ms: number): Promise<void> {

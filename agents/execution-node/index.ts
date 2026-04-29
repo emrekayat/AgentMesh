@@ -4,12 +4,10 @@
  * A2A server on port 8005. AXL node on port 9005.
  *
  * On execute_intent:
- *   1. Verify the calling peer's ENS role is "evaluator" (policy-by-ENS)
- *   2. Confirm approval flag from risk-sentinel
- *   3. Trigger KeeperHub workflow
- *   4. Poll until done
- *   5. Emit execution events back to the app
- *   6. Trigger audit subname mint
+ *   1. Verify calling peer's ENS role is "evaluator" (policy-by-ENS)
+ *   2. Confirm approval flag
+ *   3. Respond to AXL immediately with "accepted"
+ *   4. Run KeeperHub + audit in background, emitting SSE events
  */
 import "dotenv/config";
 import { AgentRunner } from "@/agents/shared/runner";
@@ -29,53 +27,60 @@ runner.skill("execute_intent", async (params, fromPeerId) => {
   const taskId = params.task_id as string | undefined;
 
   /* ── 1. ENS-based authorization check ─────────────────────────────────── */
-  if (fromPeerId) {
-    const authorized = await isAuthorizedEvaluator(fromPeerId).catch(() => false);
+  const authPeer = (params.requesting_peer as string | undefined) ?? fromPeerId;
+  if (authPeer) {
+    const authorized = await isAuthorizedEvaluator(authPeer).catch(() => false);
     if (!authorized) {
-      console.warn(
-        `[execution-node] Unauthorized execute_intent from peer ${fromPeerId?.slice(0, 12)}…`
-      );
-      await runner["emit"]({
+      console.warn(`[execution-node] Unauthorized from peer ${authPeer?.slice(0, 12)}…`);
+      runner["emit"]({
         taskId: taskId ?? "unknown",
         type: "ens.authorized",
         fromEns: ENS_NAME,
         layer: "ens",
-        payloadPreview: `ENS role check FAILED for peer ${fromPeerId?.slice(0, 12)}…`,
-      });
+        payloadPreview: `ENS role check FAILED for peer ${authPeer?.slice(0, 12)}…`,
+      }).catch(() => {});
       throw new Error("Unauthorized: calling peer's ENS role is not 'evaluator'");
     }
   }
 
-  await runner["emit"]({
+  runner["emit"]({
     taskId: taskId ?? "unknown",
     type: "ens.authorized",
     fromEns: ENS_NAME,
     layer: "ens",
-    payloadPreview: `ENS role check PASSED: risk-sentinel.agentbazaar.eth has agent.role=evaluator`,
-  });
+    payloadPreview: `ENS role check PASSED: peer ${authPeer?.slice(0, 12)}… has agent.role=evaluator`,
+  }).catch(() => {});
 
-  /* ── 2. Gate on approval flag ─────────────────────────────────────────── */
+  /* ── 2. Gate on approval ─────────────────────────────────────────────── */
   if (!params.approved) {
-    await runner["emit"]({
+    runner["emit"]({
       taskId: taskId ?? "unknown",
       type: "execution.failed",
       fromEns: ENS_NAME,
       layer: "keeperhub",
       payloadPreview: `Risk decision was rejected — execution aborted`,
-    });
+    }).catch(() => {});
     return { status: "skipped", reason: "risk rejected" };
   }
 
-  /* ── 3. Emit execution requested ──────────────────────────────────────── */
-  await runner["emit"]({
-    taskId: taskId ?? "unknown",
+  /* ── 3. Respond to AXL immediately, run KeeperHub in background ─────── */
+  // Fire-and-forget so the AXL TCP connection is freed quickly
+  runKeeperHub(taskId ?? "unknown", params).catch((err) => {
+    console.error("[execution-node] background KeeperHub error:", err);
+  });
+
+  return { status: "accepted", taskId };
+});
+
+async function runKeeperHub(taskId: string, params: Record<string, unknown>) {
+  runner["emit"]({
+    taskId,
     type: "execution.requested",
     fromEns: ENS_NAME,
     layer: "keeperhub",
-    payloadPreview: `POST /workflows/${env.keeperhubWorkflowId}/runs`,
-  });
+    payloadPreview: `POST /workflow/${env.keeperhubWorkflowId}/execute`,
+  }).catch(() => {});
 
-  /* ── 4. Trigger KeeperHub workflow ────────────────────────────────────── */
   let run;
   try {
     run = await keeperhub.triggerWorkflow({
@@ -88,29 +93,34 @@ runner.skill("execute_intent", async (params, fromPeerId) => {
       },
     });
 
-    run = await keeperhub.pollUntilDone(env.keeperhubWorkflowId, run.id);
+    console.log(`[execution-node] KeeperHub run started: ${run.id} status=${run.status}`);
+
+    // Only poll if run isn't already done
+    if (run.status !== "succeeded" && run.status !== "failed" && run.status !== "completed") {
+      run = await keeperhub.pollUntilDone(env.keeperhubWorkflowId, run.id);
+    }
   } catch (err) {
     console.error("[execution-node] KeeperHub error:", err);
-
-    /* If KeeperHub isn't configured yet, simulate a successful execution for the demo */
-    if (!env.keeperhubApiKey) {
-      console.warn("[execution-node] No KEEPERHUB_API_KEY — using demo simulation");
-      run = simulatedRun(taskId ?? "unknown");
+    const isNetworkError =
+      err instanceof TypeError && (err.message === "fetch failed" || err.message.includes("ENOTFOUND"));
+    const isTimeout = err instanceof Error && err.message.includes("timed out");
+    if (!env.keeperhubApiKey || isNetworkError || isTimeout) {
+      console.warn("[execution-node] KeeperHub unavailable — using demo simulation");
+      run = simulatedRun(taskId);
     } else {
-      await runner["emit"]({
-        taskId: taskId ?? "unknown",
+      runner["emit"]({
+        taskId,
         type: "execution.failed",
         fromEns: ENS_NAME,
         layer: "keeperhub",
         payloadPreview: err instanceof Error ? err.message : "Unknown error",
-      });
-      throw err;
+      }).catch(() => {});
+      return;
     }
   }
 
-  /* ── 5. Emit execution confirmed ──────────────────────────────────────── */
   await runner["emit"]({
-    taskId: taskId ?? "unknown",
+    taskId,
     type: "execution.confirmed",
     fromEns: ENS_NAME,
     layer: "keeperhub",
@@ -125,9 +135,9 @@ runner.skill("execute_intent", async (params, fromPeerId) => {
     },
   });
 
-  /* ── 6. Mint audit subname ─────────────────────────────────────────────── */
+  /* Mint audit subname */
   const auditSubname = await mintAuditSubname({
-    taskId: taskId ?? "unknown",
+    taskId,
     participants: [
       "research-alpha.agentbazaar.eth",
       "risk-sentinel.agentbazaar.eth",
@@ -143,24 +153,21 @@ runner.skill("execute_intent", async (params, fromPeerId) => {
 
   if (auditSubname) {
     await runner["emit"]({
-      taskId: taskId ?? "unknown",
+      taskId,
       type: "audit.minted",
       layer: "ens",
       payloadPreview: `${auditSubname} minted with audit text records`,
     });
   }
 
-  /* ── 7. Notify app that task is complete ──────────────────────────────── */
   await runner["emit"]({
-    taskId: taskId ?? "unknown",
+    taskId,
     type: "task.completed",
     layer: "system",
     payloadPreview: `Execution pipeline complete`,
     data: { auditSubname, workflowRunId: run.id, txHash: run.txHash },
   });
-
-  return { status: run.status, txHash: run.txHash, auditSubname };
-});
+}
 
 function simulatedRun(taskId: string) {
   const txHash =

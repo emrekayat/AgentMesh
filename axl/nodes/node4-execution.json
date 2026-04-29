@@ -2,13 +2,15 @@
   "PrivateKeyPath": "../../axl/keys/execution.pem",
   "Peers": [
     "tls://127.0.0.1:9010",
+    "tls://127.0.0.1:9011",
+    "tls://127.0.0.1:9012",
     "tls://34.46.48.224:9001",
     "tls://136.111.135.206:9001"
   ],
-  "Listen": [],
+  "Listen": ["tls://127.0.0.1:9013"],
   "api_port": 9005,
   "bridge_addr": "127.0.0.1",
-  "tcp_port": 7004,
+  "tcp_port": 7001,
   "a2a_addr": "http://127.0.0.1",
   "a2a_port": 8005
 }

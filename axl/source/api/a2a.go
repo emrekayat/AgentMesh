@@ -15,7 +15,7 @@ import (
 )
 
 var a2aDial = func(netStack *stack.Stack, tcpPort int, peerId string) (net.Conn, error) {
-	return dial.DialPeerConnection(netStack, tcpPort, peerId, 30*time.Second)
+	return dial.DialPeerConnection(netStack, tcpPort, peerId, 120*time.Second)
 }
 
 // A2AMessage is the envelope for A2A requests over Yggdrasil TCP

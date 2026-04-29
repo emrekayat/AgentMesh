@@ -2,19 +2,17 @@
  * ENS-based authorization helper for agents.
  *
  * Before execution-node triggers KeeperHub, it checks that the calling
- * peer's ENS subname has the correct agent.role text record. This is the
- * "policy-by-ENS" authorization pattern: authorization is a live ENS lookup,
- * not a config file. Revoke by editing the text record.
+ * peer's ENS subname has the correct agent.role. This is the
+ * "policy-by-ENS" authorization pattern: authorization is derived from the
+ * ENS-driven agent registry, not a config file.
  */
-import { peerIdToEnsName } from "@/lib/ens/registry";
-import { getTextRecord, TEXT_RECORD_KEYS } from "@/lib/ens/text-records";
+import { discoverAgents } from "@/lib/ens/registry";
 
 export async function isAuthorizedEvaluator(fromPeerId: string): Promise<boolean> {
   try {
-    const ensName = await peerIdToEnsName(fromPeerId);
-    if (!ensName) return false;
-    const role = await getTextRecord(ensName, TEXT_RECORD_KEYS.role);
-    return role === "evaluator";
+    const agents = await discoverAgents();
+    const agent = agents.find((a) => a.axlPeerId === fromPeerId);
+    return agent?.role === "evaluator";
   } catch {
     return false;
   }
@@ -22,10 +20,9 @@ export async function isAuthorizedEvaluator(fromPeerId: string): Promise<boolean
 
 export async function isAuthorizedExecutor(fromPeerId: string): Promise<boolean> {
   try {
-    const ensName = await peerIdToEnsName(fromPeerId);
-    if (!ensName) return false;
-    const role = await getTextRecord(ensName, TEXT_RECORD_KEYS.role);
-    return role === "executor";
+    const agents = await discoverAgents();
+    const agent = agents.find((a) => a.axlPeerId === fromPeerId);
+    return agent?.role === "executor";
   } catch {
     return false;
   }
