@@ -102,6 +102,12 @@ export function TaskDetailClient({
             (prev.status === "submitted" || prev.status === "discovering")
           )
             next.status = "coordinating";
+          if (event.type === "skill.responded" && event.skill === "score_risk" && event.data) {
+            const d = event.data as Record<string, unknown>;
+            if (d.risk_score !== undefined) next.riskScore = d.risk_score as number;
+            if (d.decision === "approved" || d.decision === "rejected") next.riskDecision = d.decision;
+            if (d.rationale) next.finalSummary = d.rationale as string;
+          }
           if (event.type === "execution.requested")
             next.status = "execution-pending";
           if (event.type === "execution.confirmed") {

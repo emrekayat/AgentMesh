@@ -70,6 +70,7 @@ function updateStatus(task: Task, event: CoordinationEvent): void {
         const d = event.data as Record<string, unknown>;
         task.riskScore = d.risk_score as number | undefined;
         task.riskDecision = (d.decision === "approved" || d.decision === "rejected") ? d.decision : undefined;
+        if (d.rationale) task.finalSummary = d.rationale as string;
       }
       break;
     case "execution.requested": task.status = "execution-pending"; break;
