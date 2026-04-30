@@ -208,10 +208,10 @@ export default function HomePage() {
             Icon={Wrench}
             title="Onchain execution"
             lines={[
-              "workflow: wf_eth_swap_base_sepolia",
+              "workflow: 7zde3uktt1ewt8ggelh29",
               "Turnkey hardware-backed signer",
-              "tx 0x4d7c…0d1e confirmed",
-              "x402 micropayment rails",
+              "tx 0x95b8…316d confirmed",
+              "~45,059 gas · Base Sepolia",
             ]}
             note="KeeperHub is on the critical execution path — not a logo."
             delay={0.2}

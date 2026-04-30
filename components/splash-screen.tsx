@@ -9,9 +9,9 @@ export function SplashScreen() {
   const [mounted, setMounted] = useState(true);
 
   useEffect(() => {
-    const t1 = setTimeout(() => setPhase("hold"), 900);
-    const t2 = setTimeout(() => setPhase("out"), 4000);
-    const t3 = setTimeout(() => setMounted(false), 4700);
+    const t1 = setTimeout(() => setPhase("hold"), 400);
+    const t2 = setTimeout(() => setPhase("out"), 1500);
+    const t3 = setTimeout(() => setMounted(false), 2200);
     return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
   }, []);
 
