@@ -8,7 +8,10 @@ import {
   type ExecutionResult,
 } from "@/lib/types";
 
-const DB_PATH = path.join(process.cwd(), ".tasks.json");
+// Vercel: filesystem is read-only except /tmp
+const DB_PATH = process.env.VERCEL
+  ? "/tmp/.tasks.json"
+  : path.join(process.cwd(), ".tasks.json");
 
 type TaskRecord = {
   task: Task;
