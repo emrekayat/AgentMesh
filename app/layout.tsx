@@ -53,7 +53,7 @@ function SiteHeader() {
         <nav className="flex items-center gap-1 text-sm text-foreground-muted">
           <NavLink href="/dashboard">Dashboard</NavLink>
           <NavLink href="/agents">Agents</NavLink>
-          <NavLink href="/tasks/demo">Tasks</NavLink>
+          <NavLink href="/tasks">Tasks</NavLink>
         </nav>
         <div className="hidden md:flex items-center gap-2 text-xs font-mono text-foreground-dim">
           <span className="inline-flex items-center gap-1.5 rounded-full border border-border/60 px-2.5 py-1">
