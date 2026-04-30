@@ -2,7 +2,7 @@
 
 Submitted by: Agent Bazaar / AgentMesh (ETHGlobal OpenAgents 2026)
 Build dates: 2026-04-28 → 2026-04-30
-Contact: dwox631@gmail.com
+Contact: crazyyyidea@gmail.com
 Workflow ID used: `7zde3uktt1ewt8ggelh29` (Transfer ERC20 Token, Base Sepolia)
 
 ---
