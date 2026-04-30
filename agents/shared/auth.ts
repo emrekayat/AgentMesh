@@ -12,8 +12,10 @@ export async function isAuthorizedEvaluator(fromPeerId: string): Promise<boolean
   try {
     const agents = await discoverAgents();
     const agent = agents.find((a) => a.axlPeerId === fromPeerId);
+    console.log(`[auth] peer ${fromPeerId.slice(0,12)}… → found: ${agent?.ensName ?? "none"} role: ${agent?.role ?? "none"}`);
     return agent?.role === "evaluator";
-  } catch {
+  } catch (err) {
+    console.error("[auth] discoverAgents failed:", err instanceof Error ? err.message : err);
     return false;
   }
 }

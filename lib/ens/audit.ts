@@ -8,7 +8,7 @@
 import { createOffchainClient } from "@thenamespace/offchain-manager";
 
 const AUDIT_PARENT =
-  process.env.AGENT_BAZAAR_AUDIT_ENS ?? "tasks.agentbazaar.eth";
+  process.env.AGENT_BAZAAR_AUDIT_ENS ?? "agentbazaar.eth";
 const TESTNET = process.env.ENS_TESTNET === "true";
 
 export type AuditRecord = {
