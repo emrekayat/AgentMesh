@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: agentmesh-backend
+    runtime: node
+    region: oregon
+    plan: free
+    buildCommand: pnpm install
+    startCommand: pnpm server:start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NAMESPACE_API_KEY
+        sync: false
+      - key: NAMESPACE_API_URL
+        value: https://dev.namespace.ninja
+      - key: AGENT_BAZAAR_ENS
+        value: agentbazaar.eth
+      - key: AGENT_BAZAAR_AUDIT_ENS
+        value: agentbazaar.eth
+      - key: ENS_TESTNET
+        value: "false"
+      - key: KEEPERHUB_API_KEY
+        sync: false
+      - key: KEEPERHUB_API_URL
+        value: https://app.keeperhub.com/api
+      - key: KEEPERHUB_WORKFLOW_ID
+        value: 7zde3uktt1ewt8ggelh29
+      - key: GROQ_API_KEY
+        sync: false
