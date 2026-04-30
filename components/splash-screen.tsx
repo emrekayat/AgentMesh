@@ -37,8 +37,8 @@ export function SplashScreen() {
               <Image
                 src="/AgentMesh.jpg"
                 alt="AgentMesh"
-                width={120}
-                height={120}
+                width={260}
+                height={260}
                 priority
               />
             </motion.div>
@@ -47,7 +47,7 @@ export function SplashScreen() {
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.3, duration: 0.4 }}
-              className="font-mono text-sm tracking-widest text-foreground-muted uppercase"
+              className="font-mono text-lg tracking-widest text-foreground-muted uppercase"
             >
               agent<span className="text-foreground-dim">/</span>mesh
             </motion.div>
