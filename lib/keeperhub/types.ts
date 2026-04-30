@@ -5,6 +5,7 @@ export type WorkflowRunRequest = {
 
 export type WorkflowRunStatus =
   | "queued"
+  | "pending"
   | "running"
   | "succeeded"
   | "failed"

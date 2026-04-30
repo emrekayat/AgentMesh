@@ -90,23 +90,20 @@ export class KeeperHubClient {
     return this.normalizeRun(raw, req.workflowId);
   }
 
-  /** Poll workflow run via correct endpoint: /api/workflows/executions/{id}/status */
+  /** Poll using /logs endpoint which returns full node output including txHash */
   async pollUntilDone(
     workflowId: string,
     runId: string,
     maxWaitMs = 60_000,
-    intervalMs = 5_000
+    intervalMs = 4_000
   ): Promise<WorkflowRun> {
     const deadline = Date.now() + maxWaitMs;
     while (Date.now() < deadline) {
       try {
-        const statusResp = await this.request<Record<string, unknown>>(
-          `/workflows/executions/${runId}/status`,
-          { signal: AbortSignal.timeout(10000) }
-        );
-        const status = String(statusResp.status ?? "running");
+        const logsResp = await this.getExecutionLogs(runId);
+        const status = String(logsResp.execution?.status ?? "running");
         if (isTerminal(status)) {
-          return this.normalizeRun({ id: runId, ...statusResp }, workflowId);
+          return this.normalizeFromLogs(logsResp, workflowId);
         }
       } catch {
         /* transient — keep polling */
@@ -114,6 +111,50 @@ export class KeeperHubClient {
       await sleep(intervalMs);
     }
     throw new Error(`KeeperHub run ${runId} timed out after ${maxWaitMs}ms`);
+  }
+
+  /** GET /api/workflows/executions/{id}/logs — full execution + node logs */
+  async getExecutionLogs(executionId: string): Promise<{
+    execution: Record<string, unknown>;
+    logs: Array<Record<string, unknown>>;
+  }> {
+    return this.request(`/workflows/executions/${executionId}/logs`, {
+      signal: AbortSignal.timeout(10000),
+    });
+  }
+
+  private normalizeFromLogs(
+    resp: { execution: Record<string, unknown>; logs: Array<Record<string, unknown>> },
+    workflowId: string
+  ): WorkflowRun {
+    const exec = resp.execution ?? {};
+    /* Extract txHash from the transfer node's output */
+    const transferLog = resp.logs?.find(
+      (l) => String(l.nodeType ?? "").includes("transfer") || String(l.nodeName ?? "").toLowerCase().includes("transfer")
+    );
+    const nodeOutput = transferLog?.output as Record<string, unknown> | null | undefined;
+    const txHash =
+      (nodeOutput?.txHash ?? nodeOutput?.tx_hash ?? nodeOutput?.transactionHash ?? nodeOutput?.hash) as string | undefined;
+
+    const logMessages = resp.logs?.map((l) => {
+      const out = l.output as Record<string, unknown> | null | undefined;
+      const err = l.error as string | null | undefined;
+      if (err) return `${l.nodeName}: ERROR — ${err}`;
+      if (out?.txHash) return `${l.nodeName}: tx ${String(out.txHash).slice(0, 16)}…`;
+      return `${l.nodeName}: ${l.status}`;
+    }) ?? [];
+
+    return {
+      id: String(exec.id ?? `run_${Date.now()}`),
+      workflowId: String((exec.workflow as Record<string, unknown>)?.id ?? exec.workflowId ?? workflowId),
+      status: String(exec.status ?? "running") as WorkflowRun["status"],
+      txHash,
+      gasUsed: nodeOutput?.gasUsedUnits ? String(nodeOutput.gasUsedUnits) : undefined,
+      chain: "base-sepolia",
+      createdAt: String(exec.startedAt ?? new Date().toISOString()),
+      updatedAt: String(exec.completedAt ?? new Date().toISOString()),
+      logs: logMessages,
+    };
   }
 
   private normalizeRun(raw: Record<string, unknown>, workflowId: string): WorkflowRun {

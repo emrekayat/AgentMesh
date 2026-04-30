@@ -113,8 +113,14 @@ export async function runTaskPipeline(taskId: string): Promise<void> {
       data: researchResult,
     });
   } catch (err) {
-    console.warn("[pipeline] AXL research failed — falling back to simulation:", err instanceof Error ? err.message : err);
-    await simulatePipeline(taskId, task.prompt, agents);
+    console.error("[pipeline] AXL research failed:", err instanceof Error ? err.message : err);
+    emit({
+      taskId,
+      type: "execution.failed",
+      fromEns: researcher.ensName,
+      layer: "gensyn",
+      payloadPreview: `research-alpha AXL error: ${err instanceof Error ? err.message : "connection failed"}`,
+    });
     return;
   }
 
@@ -151,8 +157,14 @@ export async function runTaskPipeline(taskId: string): Promise<void> {
       data: riskResult,
     });
   } catch (err) {
-    console.warn("[pipeline] AXL risk scoring failed — falling back:", err instanceof Error ? err.message : err);
-    await simulatePipeline(taskId, task.prompt, agents);
+    console.error("[pipeline] AXL risk scoring failed:", err instanceof Error ? err.message : err);
+    emit({
+      taskId,
+      type: "execution.failed",
+      fromEns: sentinel.ensName,
+      layer: "gensyn",
+      payloadPreview: `risk-sentinel AXL error: ${err instanceof Error ? err.message : "connection failed"}`,
+    });
     return;
   }
 
@@ -208,125 +220,3 @@ export async function runTaskPipeline(taskId: string): Promise<void> {
   }
 }
 
-/** Full simulation when AXL nodes aren't running */
-async function simulatePipeline(
-  taskId: string,
-  prompt: string,
-  agents: Agent[]
-) {
-  const researcher = agents.find((a) => a.role === "researcher");
-  const sentinel = agents.find((a) => a.role === "evaluator");
-  const executor = agents.find((a) => a.role === "executor");
-
-  const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-  await delay(800);
-  emit({
-    taskId,
-    type: "skill.invoked",
-    fromEns: ORCHESTRATOR_ENS,
-    toEns: researcher?.ensName ?? "research-alpha.agentbazaar.eth",
-    skill: "analyze_token",
-    layer: "gensyn",
-    payloadPreview: `[sim] Analyzing: ${prompt.slice(0, 60)}…`,
-  });
-
-  await delay(2000);
-  emit({
-    taskId,
-    type: "skill.responded",
-    fromEns: researcher?.ensName ?? "research-alpha.agentbazaar.eth",
-    skill: "analyze_token",
-    layer: "gensyn",
-    payloadPreview:
-      "[sim] Research complete: sentiment=bullish, volatility=medium, liquidity=high",
-  });
-
-  await delay(600);
-  emit({
-    taskId,
-    type: "skill.invoked",
-    fromEns: researcher?.ensName ?? "research-alpha.agentbazaar.eth",
-    toEns: sentinel?.ensName ?? "risk-sentinel.agentbazaar.eth",
-    skill: "score_risk",
-    layer: "gensyn",
-    payloadPreview: "[sim] Forwarding findings for risk evaluation",
-  });
-
-  await delay(1500);
-  const riskScore = 7.2;
-  emit({
-    taskId,
-    type: "skill.responded",
-    fromEns: sentinel?.ensName ?? "risk-sentinel.agentbazaar.eth",
-    skill: "score_risk",
-    layer: "gensyn",
-    payloadPreview: `[sim] score:${riskScore} decision:approved threshold:6.0`,
-  });
-
-  await delay(400);
-  emit({
-    taskId,
-    type: "ens.authorized",
-    fromEns: executor?.ensName ?? "execution-node.agentbazaar.eth",
-    layer: "ens",
-    payloadPreview: `[sim] ENS role check PASSED: risk-sentinel.agentbazaar.eth has agent.role=evaluator`,
-  });
-
-  await delay(500);
-  emit({
-    taskId,
-    type: "execution.requested",
-    fromEns: executor?.ensName ?? "execution-node.agentbazaar.eth",
-    layer: "keeperhub",
-    payloadPreview: "[sim] POST /workflows/wf_demo/runs",
-  });
-
-  await delay(2500);
-  const txHash =
-    "0x" +
-    Array.from({ length: 64 }, () =>
-      Math.floor(Math.random() * 16).toString(16)
-    ).join("");
-  const workflowRunId = `wfr_sim_${taskId}`;
-
-  emit({
-    taskId,
-    type: "execution.confirmed",
-    fromEns: executor?.ensName ?? "execution-node.agentbazaar.eth",
-    layer: "keeperhub",
-    payloadPreview: `[sim] tx ${txHash.slice(0, 14)}… — status: succeeded`,
-    data: {
-      workflowRunId,
-      txHash,
-      blockNumber: 7_142_338 + Math.floor(Math.random() * 1000),
-      gasUsed: "164,221",
-      status: "succeeded",
-      logs: [
-        "Workflow accepted (simulation mode)",
-        "Simulated Turnkey signer — enclave handshake ok",
-        `Simulated tx ${txHash.slice(0, 16)}… submitted`,
-        "Workflow status → succeeded (simulated)",
-      ],
-    },
-  });
-
-  await delay(800);
-  const shortId = taskId.slice(0, 6);
-  const auditSubname = `task-${shortId}.tasks.agentbazaar.eth`;
-  emit({
-    taskId,
-    type: "audit.minted",
-    layer: "ens",
-    payloadPreview: `${auditSubname} minted with audit text records`,
-  });
-
-  await delay(300);
-  emit({
-    taskId,
-    type: "task.completed",
-    layer: "system",
-    payloadPreview: `[sim] Execution pipeline complete`,
-    data: { auditSubname, workflowRunId, txHash },
-  });
-}

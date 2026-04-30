@@ -82,63 +82,37 @@ async function runKeeperHub(taskId: string, params: Record<string, unknown>) {
     payloadPreview: `POST /workflow/${env.keeperhubWorkflowId}/execute`,
   }).catch(() => {});
 
-  let run;
+  let run: WorkflowRun;
   try {
-    /* Try Direct Execution first — synchronous, returns tx hash immediately */
-    const directResult = await keeperhub.directTransfer({
-      network: process.env.CHAIN_NAME ?? "base-sepolia",
-      recipientAddress: process.env.KEEPERHUB_RECIPIENT ?? "0x9BC9C9E6d793fC2ed8A8cFc98d55e1f64d3bf6DF",
-      amount: "0.01",
+    /* Trigger the pre-configured KeeperHub workflow */
+    const triggered = await keeperhub.triggerWorkflow({
+      workflowId: env.keeperhubWorkflowId,
+      inputs: {
+        task_id: taskId,
+        risk_score: params.risk_score,
+      },
     });
 
-    console.log(`[execution-node] KeeperHub direct exec: ${directResult.executionId} status=${directResult.status}`);
+    console.log(`[execution-node] KeeperHub workflow triggered: ${triggered.id} status=${triggered.status}`);
 
-    /* If KeeperHub returned failed (wallet not configured / no funds), use simulation */
-    if (directResult.status === "failed" || directResult.status === "error") {
-      console.warn("[execution-node] KeeperHub exec failed — using demo simulation");
-      run = { ...simulatedRun(taskId), id: directResult.executionId };
+    /* Poll until terminal if still running */
+    if (triggered.status === "running" || triggered.status === "pending") {
+      run = await keeperhub.pollUntilDone(env.keeperhubWorkflowId, triggered.id, 120_000);
     } else {
-      run = {
-        id: directResult.executionId,
-        workflowId: env.keeperhubWorkflowId,
-        status: directResult.status as WorkflowRun["status"],
-        txHash: directResult.transactionHash,
-        chain: process.env.CHAIN_NAME ?? "base-sepolia",
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        logs: [`Direct execution ${directResult.status}: ${directResult.executionId}`],
-      } satisfies WorkflowRun;
-
-      /* If still running, poll status */
-      if (directResult.status === "running" || directResult.status === "pending") {
-        const status = await keeperhub.getDirectExecutionStatus(directResult.executionId);
-        run.txHash = status.transactionHash ?? run.txHash;
-        run.status = status.status as WorkflowRun["status"];
-      }
+      run = triggered;
     }
+
+    console.log(`[execution-node] KeeperHub workflow done: ${run.id} status=${run.status} tx=${run.txHash}`);
   } catch (err) {
     console.error("[execution-node] KeeperHub error:", err);
-    const isNetworkOrConfigError =
-      err instanceof TypeError ||
-      (err instanceof Error && (
-        err.message.includes("timed out") ||
-        err.message.includes("ENOTFOUND") ||
-        err.message.includes("422") ||
-        err.message.includes("401")
-      ));
-    if (!env.keeperhubApiKey || isNetworkOrConfigError) {
-      console.warn("[execution-node] KeeperHub unavailable — using demo simulation");
-      run = simulatedRun(taskId);
-    } else {
-      runner["emit"]({
-        taskId,
-        type: "execution.failed",
-        fromEns: ENS_NAME,
-        layer: "keeperhub",
-        payloadPreview: err instanceof Error ? err.message : "Unknown error",
-      }).catch(() => {});
-      return;
-    }
+    runner["emit"]({
+      taskId,
+      type: "execution.failed",
+      fromEns: ENS_NAME,
+      layer: "keeperhub",
+      payloadPreview: err instanceof Error ? err.message : "Unknown error",
+    }).catch(() => {});
+    return;
   }
 
   await runner["emit"]({
@@ -191,32 +165,6 @@ async function runKeeperHub(taskId: string, params: Record<string, unknown>) {
   });
 }
 
-function simulatedRun(taskId: string) {
-  const txHash =
-    "0x" +
-    Array.from({ length: 64 }, () =>
-      Math.floor(Math.random() * 16).toString(16)
-    ).join("");
-  return {
-    id: `wfr_sim_${taskId}`,
-    workflowId: env.keeperhubWorkflowId,
-    status: "succeeded" as const,
-    txHash,
-    blockNumber: 7_142_338 + Math.floor(Math.random() * 1000),
-    gasUsed: "164,221",
-    chain: "base-sepolia",
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    logs: [
-      "Workflow accepted (simulation mode — add KEEPERHUB_API_KEY to run real)",
-      "Simulated Turnkey signer — enclave handshake ok",
-      "Simulated gas estimate: 168,400",
-      `Simulated tx ${txHash.slice(0, 16)}… submitted`,
-      `Mined in block ${7_142_338 + Math.floor(Math.random() * 1000)}`,
-      "Workflow status → succeeded (simulated)",
-    ],
-  };
-}
 
 runner.start();
 console.log(`[execution-node] Running — AXL node expected on :${AXL_PORT}`);
