@@ -1,7 +1,5 @@
-/**
- * In-memory task store. Phase 1 keeps tasks in memory for the demo.
- * Phase 3 swaps the executor side to the real AXL pipeline.
- */
+import fs from "fs";
+import path from "path";
 import { nanoid } from "nanoid";
 import {
   type Task,
@@ -9,11 +7,8 @@ import {
   type CoordinationEvent,
   type ExecutionResult,
 } from "@/lib/types";
-import {
-  MOCK_TASK_DEMO,
-  MOCK_EVENTS_DEMO,
-  MOCK_EXECUTION_DEMO,
-} from "@/lib/mock/seed";
+
+const DB_PATH = path.join(process.cwd(), ".tasks.json");
 
 type TaskRecord = {
   task: Task;
@@ -21,32 +16,43 @@ type TaskRecord = {
   execution: ExecutionResult | null;
 };
 
-const tasks = new Map<string, TaskRecord>();
-tasks.set(MOCK_TASK_DEMO.id, {
-  task: MOCK_TASK_DEMO,
-  events: MOCK_EVENTS_DEMO,
-  execution: MOCK_EXECUTION_DEMO,
-});
+type DB = Record<string, TaskRecord>;
+
+function readDB(): DB {
+  try {
+    return JSON.parse(fs.readFileSync(DB_PATH, "utf8"));
+  } catch {
+    return {};
+  }
+}
+
+function writeDB(db: DB): void {
+  fs.writeFileSync(DB_PATH, JSON.stringify(db, null, 2));
+}
 
 export function listTasks(): Task[] {
-  return [...tasks.values()].map((r) => r.task).sort((a, b) =>
-    a.createdAt < b.createdAt ? 1 : -1
-  );
+  const db = readDB();
+  return Object.values(db)
+    .map((r) => r.task)
+    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
 }
 
 export function getTask(id: string): TaskRecord | undefined {
-  return tasks.get(id);
+  return readDB()[id];
 }
 
 export function appendEvent(event: CoordinationEvent): void {
-  const record = tasks.get(event.taskId);
+  const db = readDB();
+  const record = db[event.taskId];
   if (!record) return;
   record.events.push(event);
   record.task.updatedAt = event.timestamp;
+  writeDB(db);
 }
 
 export function updateTaskFromEvent(event: CoordinationEvent): void {
-  const record = tasks.get(event.taskId);
+  const db = readDB();
+  const record = db[event.taskId];
   if (!record) return;
   const task = record.task;
 
@@ -91,12 +97,16 @@ export function updateTaskFromEvent(event: CoordinationEvent): void {
   if (event.fromEns && !task.participants.includes(event.fromEns)) {
     task.participants.push(event.fromEns);
   }
+
+  writeDB(db);
 }
 
 export function setExecution(taskId: string, execution: ExecutionResult): void {
-  const record = tasks.get(taskId);
+  const db = readDB();
+  const record = db[taskId];
   if (!record) return;
   record.execution = execution;
+  writeDB(db);
 }
 
 export function createTask(input: TaskCreateInput): Task {
@@ -112,7 +122,8 @@ export function createTask(input: TaskCreateInput): Task {
     updatedAt: now,
     participants: [],
   };
-  tasks.set(id, {
+  const db = readDB();
+  db[id] = {
     task,
     events: [
       {
@@ -125,6 +136,7 @@ export function createTask(input: TaskCreateInput): Task {
       },
     ],
     execution: null,
-  });
+  };
+  writeDB(db);
   return task;
 }
