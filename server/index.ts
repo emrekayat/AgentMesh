@@ -65,6 +65,13 @@ function updateStatus(task: Task, event: CoordinationEvent): void {
     case "task.submitted": task.status = "submitted"; break;
     case "discovery.completed": if (task.status === "submitted") task.status = "discovering"; break;
     case "skill.invoked": if (task.status === "submitted" || task.status === "discovering") task.status = "coordinating"; break;
+    case "skill.responded":
+      if (event.skill === "score_risk" && event.data) {
+        const d = event.data as Record<string, unknown>;
+        task.riskScore = d.risk_score as number | undefined;
+        task.riskDecision = (d.decision === "approved" || d.decision === "rejected") ? d.decision : undefined;
+      }
+      break;
     case "execution.requested": task.status = "execution-pending"; break;
     case "execution.confirmed":
       task.status = "execution-complete";
