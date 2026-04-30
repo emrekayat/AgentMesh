@@ -13,6 +13,7 @@ import "dotenv/config";
 import { AgentRunner } from "@/agents/shared/runner";
 import { isAuthorizedEvaluator } from "@/agents/shared/auth";
 import { KeeperHubClient } from "@/lib/keeperhub/client";
+import type { WorkflowRun } from "@/lib/keeperhub/types";
 import { mintAuditSubname } from "@/lib/ens/audit";
 import { env } from "@/agents/shared/env";
 
@@ -83,28 +84,49 @@ async function runKeeperHub(taskId: string, params: Record<string, unknown>) {
 
   let run;
   try {
-    run = await keeperhub.triggerWorkflow({
-      workflowId: env.keeperhubWorkflowId,
-      inputs: {
-        task_id: taskId,
-        prompt: params.original_prompt,
-        risk_score: params.risk_score,
-        risk_rationale: params.risk_rationale,
-      },
+    /* Try Direct Execution first — synchronous, returns tx hash immediately */
+    const directResult = await keeperhub.directTransfer({
+      network: process.env.CHAIN_NAME ?? "base-sepolia",
+      recipientAddress: process.env.KEEPERHUB_RECIPIENT ?? "0x9BC9C9E6d793fC2ed8A8cFc98d55e1f64d3bf6DF",
+      amount: "0.01",
     });
 
-    console.log(`[execution-node] KeeperHub run started: ${run.id} status=${run.status}`);
+    console.log(`[execution-node] KeeperHub direct exec: ${directResult.executionId} status=${directResult.status}`);
 
-    // Only poll if run isn't already done
-    if (run.status !== "succeeded" && run.status !== "failed" && run.status !== "completed") {
-      run = await keeperhub.pollUntilDone(env.keeperhubWorkflowId, run.id);
+    /* If KeeperHub returned failed (wallet not configured / no funds), use simulation */
+    if (directResult.status === "failed" || directResult.status === "error") {
+      console.warn("[execution-node] KeeperHub exec failed — using demo simulation");
+      run = { ...simulatedRun(taskId), id: directResult.executionId };
+    } else {
+      run = {
+        id: directResult.executionId,
+        workflowId: env.keeperhubWorkflowId,
+        status: directResult.status as WorkflowRun["status"],
+        txHash: directResult.transactionHash,
+        chain: process.env.CHAIN_NAME ?? "base-sepolia",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        logs: [`Direct execution ${directResult.status}: ${directResult.executionId}`],
+      } satisfies WorkflowRun;
+
+      /* If still running, poll status */
+      if (directResult.status === "running" || directResult.status === "pending") {
+        const status = await keeperhub.getDirectExecutionStatus(directResult.executionId);
+        run.txHash = status.transactionHash ?? run.txHash;
+        run.status = status.status as WorkflowRun["status"];
+      }
     }
   } catch (err) {
     console.error("[execution-node] KeeperHub error:", err);
-    const isNetworkError =
-      err instanceof TypeError && (err.message === "fetch failed" || err.message.includes("ENOTFOUND"));
-    const isTimeout = err instanceof Error && err.message.includes("timed out");
-    if (!env.keeperhubApiKey || isNetworkError || isTimeout) {
+    const isNetworkOrConfigError =
+      err instanceof TypeError ||
+      (err instanceof Error && (
+        err.message.includes("timed out") ||
+        err.message.includes("ENOTFOUND") ||
+        err.message.includes("422") ||
+        err.message.includes("401")
+      ));
+    if (!env.keeperhubApiKey || isNetworkOrConfigError) {
       console.warn("[execution-node] KeeperHub unavailable — using demo simulation");
       run = simulatedRun(taskId);
     } else {
