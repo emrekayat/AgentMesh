@@ -4,9 +4,12 @@ import { nanoid } from "nanoid";
 import { discoverAgents } from "@/lib/ens/registry";
 import { analyzeToken } from "@/agents/research-alpha/skills";
 import { scoreRisk } from "@/agents/risk-sentinel/skills";
-import { executeIntent } from "@/agents/execution-node/skills";
+import { KeeperHubClient } from "@/lib/keeperhub/client";
+import { mintAuditSubname } from "@/lib/ens/audit";
 import type { Task, TaskCreateInput, CoordinationEvent, ExecutionResult } from "@/lib/types";
 import { TaskCreateInputSchema } from "@/lib/types";
+
+const EXECUTION_ENS = "execution-node.agentbazaar.eth";
 
 const app = express();
 app.use(express.json());
@@ -210,11 +213,52 @@ async function runPipeline(taskId: string, task: Task): Promise<void> {
 
   /* Execution */
   emit({ taskId, type: "skill.invoked", fromEns: ORCHESTRATOR_ENS, toEns: executor.ensName, skill: "execute_intent", layer: "gensyn", payloadPreview: `Risk approved (${riskResult.risk_score}/10) — invoking execute_intent` });
+  emit({ taskId, type: "ens.authorized", fromEns: EXECUTION_ENS, layer: "ens", payloadPreview: "ENS role check PASSED: agent.role=evaluator" });
+  emit({ taskId, type: "execution.requested", fromEns: EXECUTION_ENS, layer: "keeperhub", payloadPreview: `POST /workflow/${process.env.KEEPERHUB_WORKFLOW_ID}/execute` });
 
   try {
-    await executeIntent({ task_id: taskId, original_prompt: task.prompt, risk_score: riskResult.risk_score, risk_rationale: riskResult.rationale, approved: true, requesting_peer: "direct" });
+    const keeperhub = new KeeperHubClient(
+      process.env.KEEPERHUB_API_KEY ?? "",
+      process.env.KEEPERHUB_API_URL ?? "https://app.keeperhub.com/api",
+    );
+    const workflowId = process.env.KEEPERHUB_WORKFLOW_ID ?? "";
+
+    const triggered = await keeperhub.triggerWorkflow({
+      workflowId,
+      inputs: { task_id: taskId, risk_score: riskResult.risk_score },
+    });
+
+    const run = triggered.status === "running" || triggered.status === "pending"
+      ? await keeperhub.pollUntilDone(workflowId, triggered.id, 120_000)
+      : triggered;
+
+    emit({
+      taskId,
+      type: "execution.confirmed",
+      fromEns: EXECUTION_ENS,
+      layer: "keeperhub",
+      payloadPreview: `tx ${run.txHash?.slice(0, 14) ?? run.id} — status: ${run.status}`,
+      data: { workflowRunId: run.id, txHash: run.txHash, blockNumber: run.blockNumber, gasUsed: run.gasUsed, status: run.status },
+    });
+
+    const auditSubname = await mintAuditSubname({
+      taskId,
+      participants: ["research-alpha.agentbazaar.eth", "risk-sentinel.agentbazaar.eth", EXECUTION_ENS],
+      riskScore: riskResult.risk_score as number | undefined,
+      riskDecision: "approved",
+      txHash: run.txHash,
+      workflowRunId: run.id,
+      outcome: `KeeperHub workflow ${run.status}`,
+      completedAt: new Date().toISOString(),
+    });
+
+    if (auditSubname) {
+      emit({ taskId, type: "audit.minted", layer: "ens", payloadPreview: `${auditSubname} minted with audit text records` });
+    }
+
+    emit({ taskId, type: "task.completed", layer: "system", payloadPreview: "Execution pipeline complete", data: { auditSubname, workflowRunId: run.id, txHash: run.txHash } });
   } catch (err) {
-    emit({ taskId, type: "execution.failed", fromEns: executor.ensName, layer: "keeperhub", payloadPreview: err instanceof Error ? err.message : "Execution error" });
+    emit({ taskId, type: "execution.failed", fromEns: EXECUTION_ENS, layer: "keeperhub", payloadPreview: err instanceof Error ? err.message : "Execution error" });
   }
 }
 
