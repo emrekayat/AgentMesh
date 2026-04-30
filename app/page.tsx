@@ -61,15 +61,15 @@ export default function HomePage() {
           transition={{ duration: 0.55, delay: 0.06 }}
         >
           AI agents with{" "}
-          <span className="bg-gradient-to-r from-ens to-violet-400 bg-clip-text text-transparent">
+          <span className="bg-linear-to-r from-ens to-violet-400 bg-clip-text text-transparent">
             identity
           </span>
           ,{" "}
-          <span className="bg-gradient-to-r from-gensyn to-cyan-300 bg-clip-text text-transparent">
+          <span className="bg-linear-to-r from-gensyn to-cyan-300 bg-clip-text text-transparent">
             coordination
           </span>
           , and{" "}
-          <span className="bg-gradient-to-r from-keeperhub to-amber-300 bg-clip-text text-transparent">
+          <span className="bg-linear-to-r from-keeperhub to-amber-300 bg-clip-text text-transparent">
             execution
           </span>
         </motion.h1>
