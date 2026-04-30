@@ -1,5 +1,21 @@
 # AgentMesh — Architecture
 
+## Deployment topology
+
+```
+Vercel (Next.js UI)
+  └── proxies /api/tasks, /api/stream → Render backend
+        │
+Render (Express backend — agentmesh-lvmd.onrender.com)
+  ├── task store (in-memory, persists across requests within one instance)
+  ├── SSE event bus
+  └── pipeline: ENS → LLM (Groq) → KeeperHub → ENS audit
+```
+
+When AXL nodes are running locally, the pipeline uses real P2P transport. When unavailable (e.g. on Render), skills are invoked directly — same LLM, same KeeperHub workflow, same audit subname.
+
+---
+
 ## System overview
 
 AgentMesh is a three-layer coordination network. Each layer is owned by a different protocol, and each protocol is non-substitutable — remove any one of them and a core capability disappears.

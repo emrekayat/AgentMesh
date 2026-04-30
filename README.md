@@ -132,35 +132,53 @@ Every txHash appears in the UI and is written to the task's ENS audit subname.
 
 ---
 
+## Deployment
+
+### Production (live)
+
+| Service | Platform | URL |
+|---|---|---|
+| Frontend + UI | Vercel | agent-mesh-snowy.vercel.app |
+| Pipeline backend | Render | agentmesh-lvmd.onrender.com |
+
+The pipeline backend (Express + Node.js) runs on Render. Vercel Next.js API routes proxy all task and SSE requests to it. This separates the long-running pipeline (60–120s) from Vercel's serverless function timeout.
+
+**Vercel env var required:** `BACKEND_URL=https://agentmesh-lvmd.onrender.com`
+
+### Fallback mode (no AXL mesh)
+
+When AXL nodes are unavailable, the pipeline falls back to direct skill invocation — same LLM (Groq), same KeeperHub workflow, same ENS audit. Only the P2P transport layer is bypassed. The UI labels this clearly in the coordination timeline.
+
+---
+
 ## Running Locally
 
 ### Prerequisites
 
 - Node.js 20+, pnpm
-- Go 1.22+ (to build AXL)
-- API keys: `ANTHROPIC_API_KEY`, `KEEPERHUB_API_KEY`, `NAMESPACE_API_KEY`
+- Go 1.22+ (to build AXL — optional)
+- API keys: `GROQ_API_KEY`, `KEEPERHUB_API_KEY`, `NAMESPACE_API_KEY`
 
-### 1. AXL mesh
+### 1. Backend server
+
+```bash
+cp .env .env.local   # fill in API keys
+pnpm server:dev      # Express backend on :4000
+```
+
+### 2. (Optional) AXL mesh
 
 ```bash
 cd axl/source && make build && cd ../..
 bash scripts/start-axl.sh        # boots nodes on :9002–:9005
 bash scripts/verify-topology.sh  # all 4 peer IDs visible
-```
-
-### 2. Agent processes
-
-```bash
-cp .env.example .env   # fill in API keys
-bash scripts/start-agents.sh
-# research-alpha :8003  ·  risk-sentinel :8004  ·  execution-node :8005
+bash scripts/start-agents.sh     # agent processes on :8003–:8005
 ```
 
 ### 3. Web app
 
 ```bash
-pnpm install
-pnpm dev    # localhost:3000
+pnpm dev    # localhost:3000 (proxies to localhost:4000 backend)
 ```
 
 Go to `/dashboard`, submit a task, watch `/tasks/{id}` for the live pipeline.

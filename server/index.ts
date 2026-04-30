@@ -41,6 +41,21 @@ function emit(event: Omit<CoordinationEvent, "id" | "timestamp">): void {
     record.events.push(full);
     record.task.updatedAt = full.timestamp;
     updateStatus(record.task, full);
+    if (full.type === "execution.confirmed" && full.data) {
+      const d = full.data as Record<string, unknown>;
+      record.execution = {
+        taskId: full.taskId,
+        workflowId: process.env.KEEPERHUB_WORKFLOW_ID ?? "",
+        workflowRunId: (d.workflowRunId as string) ?? "",
+        txHash: d.txHash as string | undefined,
+        blockNumber: d.blockNumber as number | undefined,
+        gasUsed: d.gasUsed as string | undefined,
+        status: "succeeded",
+        logs: (d.logs as string[]) ?? [],
+        chain: "base-sepolia",
+        startedAt: full.timestamp,
+      };
+    }
   }
   sseClients.get(full.taskId)?.forEach((send) => send(JSON.stringify(full)));
 }

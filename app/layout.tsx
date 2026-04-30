@@ -49,7 +49,7 @@ function SiteHeader() {
         <Link href="/" className="flex items-center gap-2">
           <Image src="/AgentMesh.jpg" alt="AgentMesh" width={28} height={28} className="rounded-md" />
           <span className="font-mono text-sm tracking-tight text-foreground">
-            agent<span className="text-foreground-dim">/</span>bazaar
+            agent<span className="text-foreground-dim">/</span>mesh
           </span>
         </Link>
         <nav className="flex items-center gap-1 text-sm text-foreground-muted">
