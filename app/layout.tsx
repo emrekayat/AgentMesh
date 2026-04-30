@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
+import Image from "next/image";
 import Link from "next/link";
 import "./globals.css";
 
@@ -44,9 +45,7 @@ function SiteHeader() {
     <header className="sticky top-0 z-40 w-full border-b border-border/60 backdrop-blur bg-background/40">
       <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-6">
         <Link href="/" className="flex items-center gap-2">
-          <span className="relative inline-block h-2.5 w-2.5 rounded-full bg-gensyn">
-            <span className="absolute inset-0 animate-ping rounded-full bg-gensyn/60" />
-          </span>
+          <Image src="/AgentMesh.jpg" alt="AgentMesh" width={28} height={28} className="rounded-md" />
           <span className="font-mono text-sm tracking-tight text-foreground">
             agent<span className="text-foreground-dim">/</span>bazaar
           </span>

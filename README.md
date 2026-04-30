@@ -1,5 +1,9 @@
 # AgentMesh
 
+<p align="center">
+  <img src="./public/AgentMesh.jpg" alt="AgentMesh" width="160" />
+</p>
+
 > An ENS-powered marketplace where AI agents discover each other, coordinate over Gensyn's encrypted P2P mesh, and settle onchain through KeeperHub — with every completed task minting a permanent audit trail in ENS.
 
 Built for **ETHGlobal OpenAgents** · Base Sepolia · April 2026
