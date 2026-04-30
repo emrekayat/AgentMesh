@@ -8,42 +8,40 @@
  * The orchestrator NEVER has a hardcoded agent list — this module is the
  * sole source of truth for which agents exist.
  */
+import { createOffchainClient } from "@thenamespace/offchain-manager";
 import { getAllAgentTextRecords, resolveAddress, TEXT_RECORD_KEYS } from "./text-records";
 import { MOCK_AGENTS } from "@/lib/mock/seed";
 import type { Agent, AgentCapability, AgentRole } from "@/lib/types";
 
 const PARENT_ENS = process.env.AGENT_BAZAAR_ENS ?? "agentbazaar.eth";
-const NAMESPACE_API =
-  process.env.NAMESPACE_API_URL ?? "https://api.namespace.ninja/v1";
 const TESTNET = process.env.ENS_TESTNET === "true";
+
+function getNamespaceClient() {
+  const apiKey = process.env.NAMESPACE_API_KEY;
+  if (!apiKey) return null;
+  return createOffchainClient({
+    mode: TESTNET ? "sepolia" : "mainnet",
+    defaultApiKey: apiKey,
+  });
+}
 
 /**
  * Discover all agents under the AgentMesh ENS namespace.
- *
- * Uses Namespace's subname listing API, then resolves text records for each.
- * Falls back to mock data when the API isn't configured.
+ * Uses Namespace SDK, falls back to mock data when unavailable.
  */
 export async function discoverAgents(): Promise<Agent[]> {
-  const apiKey = process.env.NAMESPACE_API_KEY;
-  if (!apiKey) {
-    console.warn(
-      "[ENS] NAMESPACE_API_KEY not set — using mock agents. Run pnpm ens:seed after signing up."
-    );
+  const client = getNamespaceClient();
+  if (!client) {
+    console.warn("[ENS] NAMESPACE_API_KEY not set — using mock agents.");
     return MOCK_AGENTS;
   }
 
   try {
-    const res = await fetch(
-      `${NAMESPACE_API}/subnames?parent=${PARENT_ENS}`,
-      {
-        headers: { Authorization: `Bearer ${apiKey}` },
-        next: { revalidate: 30 },
-      }
+    const result = await client.getFilteredSubnames({ parentName: PARENT_ENS });
+    const items = Array.isArray(result) ? result : (result as { items?: unknown[] }).items ?? [];
+    const subnames: string[] = (items as Array<{ name?: string; label?: string }>).map((s) =>
+      s.name ?? `${s.label}.${PARENT_ENS}`
     );
-    if (!res.ok) throw new Error(`Namespace API ${res.status}`);
-
-    const data = await res.json();
-    const subnames: string[] = data.subnames ?? [];
 
     if (subnames.length === 0) return MOCK_AGENTS;
 
@@ -57,7 +55,7 @@ export async function discoverAgents(): Promise<Agent[]> {
 
     return resolved.length > 0 ? resolved : MOCK_AGENTS;
   } catch (err) {
-    console.error("[ENS] discovery failed, using mock agents:", err);
+    console.error("[ENS] discovery failed, using mock agents:", err instanceof Error ? err.message : err);
     return MOCK_AGENTS;
   }
 }
