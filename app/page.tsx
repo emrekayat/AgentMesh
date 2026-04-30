@@ -1,5 +1,6 @@
 "use client";
 
+import type { ComponentType } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import {
@@ -104,7 +105,7 @@ export default function HomePage() {
             </Link>
           </Button>
           <Button asChild size="lg" variant="ghost">
-            <Link href="/tasks/demo">Demo task →</Link>
+            <Link href="/tasks">View tasks →</Link>
           </Button>
         </motion.div>
       </section>
@@ -184,7 +185,7 @@ export default function HomePage() {
               "research-alpha.agentbazaar.eth",
               "risk-sentinel.agentbazaar.eth",
               "execution-node.agentbazaar.eth",
-              "task-abc123.tasks.agentbazaar.eth",
+              "task-abc123.agentbazaar.eth",
             ]}
             note="Discovery is driven entirely by text record queries — no hardcoded agent list."
             delay={0}
@@ -276,7 +277,7 @@ function FeatureProof({
   delay,
 }: {
   variant: "ens" | "gensyn" | "keeperhub";
-  Icon: React.ComponentType<{ className?: string }>;
+  Icon: ComponentType<{ className?: string }>;
   title: string;
   lines: string[];
   note: string;
