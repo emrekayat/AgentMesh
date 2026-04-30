@@ -208,16 +208,16 @@ export default function DashboardPage() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Cpu className="h-4 w-4 text-gensyn" />
-                  Demo task
+                  Recent tasks
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
                 <p className="text-sm text-foreground-muted">
-                  See the full coordination flow with all 3 agents — pre-run and annotated.
+                  View all submitted tasks and their live coordination timelines.
                 </p>
                 <Button asChild variant="outline" className="w-full">
-                  <a href="/tasks/demo">
-                    View demo task
+                  <a href="/tasks">
+                    View all tasks
                     <ArrowRight className="h-4 w-4" />
                   </a>
                 </Button>
