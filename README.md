@@ -212,3 +212,10 @@ Four AXL nodes with four distinct ed25519 identities form a live Yggdrasil mesh.
 ### KeeperHub — Best Use
 
 KeeperHub is in the critical path — no KeeperHub, no settlement. The integration goes beyond a single API call: it uses the `/logs` endpoint to extract txHash from the transfer node's output (not available on the status endpoint), surfaces gas consumed, and writes the execution ID into the ENS audit subname. Every run visible in the KeeperHub dashboard maps 1:1 to a real coordination event on the AXL mesh.
+
+---
+
+## Further Reading
+
+- [`ARCHITECTURE.md`](./ARCHITECTURE.md) — deep-dive into the three-layer design: process topology, ENS policy engine, AXL message flow, KeeperHub execution path, and upstream patches applied to the AXL source.
+- [`KEEPERHUB_FEEDBACK.md`](./KEEPERHUB_FEEDBACK.md) — builder feedback submitted to KeeperHub covering API gaps discovered during the integration (undocumented `/logs` endpoint, missing txHash on status, node-error propagation, and more).
