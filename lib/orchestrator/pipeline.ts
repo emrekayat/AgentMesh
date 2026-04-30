@@ -1,10 +1,8 @@
 /**
  * Task pipeline FSM.
  *
- * Drives the full chain over real AXL mesh:
- *   ENS discovery → research-alpha (AXL) → risk-sentinel (AXL) → execution-node (AXL)
- *
- * Falls back to simulation when AXL nodes aren't running.
+ * Primary: AXL mesh (real P2P, requires local AXL nodes)
+ * Fallback: direct skill invocation (real LLM + real KeeperHub, no AXL transport)
  */
 import { discoverAgents } from "@/lib/ens/registry";
 import { AXLClient } from "@/lib/axl/client";
@@ -25,6 +23,17 @@ function emit(event: Omit<CoordinationEvent, "id" | "timestamp">): void {
   appendEvent(full);
   updateTaskFromEvent(full);
   bus.publish(full);
+}
+
+async function axlAvailable(): Promise<boolean> {
+  try {
+    const res = await fetch(`http://localhost:${ORCHESTRATOR_AXL_PORT}/topology`, {
+      signal: AbortSignal.timeout(1500),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
 }
 
 export async function runTaskPipeline(taskId: string): Promise<void> {
@@ -59,7 +68,7 @@ export async function runTaskPipeline(taskId: string): Promise<void> {
   const sentinel = agents.find((a) => a.role === "evaluator");
   const executor = agents.find((a) => a.role === "executor");
 
-  if (!researcher?.axlPeerId || !sentinel?.axlPeerId || !executor?.axlPeerId) {
+  if (!researcher || !sentinel || !executor) {
     emit({
       taskId,
       type: "execution.failed",
@@ -78,9 +87,33 @@ export async function runTaskPipeline(taskId: string): Promise<void> {
     payloadPreview: `Resolved ${agents.length} agents: ${agents.map((a) => a.ensName).join(", ")}`,
   });
 
+  const useAXL = researcher.axlPeerId && sentinel.axlPeerId && executor.axlPeerId && await axlAvailable();
+
+  if (useAXL) {
+    await runViaAXL(taskId, task, agents, researcher, sentinel, executor);
+  } else {
+    emit({
+      taskId,
+      type: "axl.send",
+      fromEns: ORCHESTRATOR_ENS,
+      layer: "gensyn",
+      payloadPreview: "AXL mesh unavailable — running skills directly (real LLM + KeeperHub)",
+    });
+    await runDirect(taskId, task, researcher, sentinel, executor);
+  }
+}
+
+async function runViaAXL(
+  taskId: string,
+  task: { prompt: string; category: string },
+  _agents: Agent[],
+  researcher: Agent,
+  sentinel: Agent,
+  executor: Agent,
+): Promise<void> {
   const axl = new AXLClient(ORCHESTRATOR_AXL_PORT);
 
-  /* ── 2. Research phase ───────────────────────────────────────────────── */
+  /* ── Research ── */
   emit({
     taskId,
     type: "axl.send",
@@ -94,15 +127,13 @@ export async function runTaskPipeline(taskId: string): Promise<void> {
 
   let researchResult: Record<string, unknown>;
   try {
-    const resp = await axl.sendA2A(researcher.axlPeerId, "analyze_token", {
+    const resp = await axl.sendA2A(researcher.axlPeerId!, "analyze_token", {
       task_id: taskId,
       prompt: task.prompt,
       category: task.category,
     }, 45_000);
-
     if (resp.error) throw new Error(resp.error.message);
     researchResult = (resp.result as Record<string, unknown>) ?? {};
-
     emit({
       taskId,
       type: "skill.responded",
@@ -113,7 +144,6 @@ export async function runTaskPipeline(taskId: string): Promise<void> {
       data: researchResult,
     });
   } catch (err) {
-    console.error("[pipeline] AXL research failed:", err instanceof Error ? err.message : err);
     emit({
       taskId,
       type: "execution.failed",
@@ -124,7 +154,7 @@ export async function runTaskPipeline(taskId: string): Promise<void> {
     return;
   }
 
-  /* ── 3. Risk evaluation phase ────────────────────────────────────────── */
+  /* ── Risk ── */
   emit({
     taskId,
     type: "axl.send",
@@ -138,15 +168,13 @@ export async function runTaskPipeline(taskId: string): Promise<void> {
 
   let riskResult: Record<string, unknown>;
   try {
-    const resp = await axl.sendA2A(sentinel.axlPeerId, "score_risk", {
+    const resp = await axl.sendA2A(sentinel.axlPeerId!, "score_risk", {
       task_id: taskId,
       findings: researchResult,
       threshold: 6.0,
     }, 45_000);
-
     if (resp.error) throw new Error(resp.error.message);
     riskResult = (resp.result as Record<string, unknown>) ?? {};
-
     emit({
       taskId,
       type: "skill.responded",
@@ -157,7 +185,6 @@ export async function runTaskPipeline(taskId: string): Promise<void> {
       data: riskResult,
     });
   } catch (err) {
-    console.error("[pipeline] AXL risk scoring failed:", err instanceof Error ? err.message : err);
     emit({
       taskId,
       type: "execution.failed",
@@ -168,21 +195,9 @@ export async function runTaskPipeline(taskId: string): Promise<void> {
     return;
   }
 
-  /* ── 4. Execution phase (if approved) ────────────────────────────────── */
   if (riskResult.decision !== "approved") {
-    emit({
-      taskId,
-      type: "execution.failed",
-      fromEns: sentinel.ensName,
-      layer: "keeperhub",
-      payloadPreview: `Risk rejected (score ${riskResult.risk_score}/10 < threshold) — execution aborted`,
-    });
-    emit({
-      taskId,
-      type: "task.completed",
-      layer: "system",
-      payloadPreview: `Task completed: no-go decision from risk-sentinel`,
-    });
+    emit({ taskId, type: "execution.failed", fromEns: sentinel.ensName, layer: "keeperhub", payloadPreview: `Risk rejected (score ${riskResult.risk_score}/10)` });
+    emit({ taskId, type: "task.completed", layer: "system", payloadPreview: "Task completed: no-go decision" });
     return;
   }
 
@@ -198,18 +213,16 @@ export async function runTaskPipeline(taskId: string): Promise<void> {
   });
 
   try {
-    const resp = await axl.sendA2A(executor.axlPeerId, "execute_intent", {
+    const resp = await axl.sendA2A(executor.axlPeerId!, "execute_intent", {
       task_id: taskId,
       original_prompt: task.prompt,
       risk_score: riskResult.risk_score,
       risk_rationale: riskResult.rationale,
       approved: true,
-      requesting_peer: sentinel.axlPeerId,  // ENS auth: execution checks this is evaluator role
+      requesting_peer: sentinel.axlPeerId,
     }, 120_000);
-
     if (resp.error) throw new Error(resp.error.message);
   } catch (err) {
-    console.warn("[pipeline] AXL execution failed:", err instanceof Error ? err.message : err);
     emit({
       taskId,
       type: "execution.failed",
@@ -220,3 +233,118 @@ export async function runTaskPipeline(taskId: string): Promise<void> {
   }
 }
 
+async function runDirect(
+  taskId: string,
+  task: { prompt: string; category: string },
+  researcher: Agent,
+  sentinel: Agent,
+  executor: Agent,
+): Promise<void> {
+  const { analyzeToken } = await import("@/agents/research-alpha/skills");
+  const { scoreRisk } = await import("@/agents/risk-sentinel/skills");
+  const { executeIntent } = await import("@/agents/execution-node/skills");
+
+  /* ── Research ── */
+  emit({
+    taskId,
+    type: "skill.invoked",
+    fromEns: ORCHESTRATOR_ENS,
+    toEns: researcher.ensName,
+    skill: "analyze_token",
+    layer: "gensyn",
+    payloadPreview: `Invoking analyze_token on ${researcher.ensName}`,
+  });
+
+  let researchResult: Record<string, unknown>;
+  try {
+    researchResult = await analyzeToken({ task_id: taskId, prompt: task.prompt, category: task.category }) as Record<string, unknown>;
+    emit({
+      taskId,
+      type: "skill.responded",
+      fromEns: researcher.ensName,
+      skill: "analyze_token",
+      layer: "gensyn",
+      payloadPreview: `Research complete: sentiment=${researchResult.sentiment ?? "?"}, volatility=${researchResult.volatility24h ?? "?"}`,
+      data: researchResult,
+    });
+  } catch (err) {
+    emit({
+      taskId,
+      type: "execution.failed",
+      fromEns: researcher.ensName,
+      layer: "gensyn",
+      payloadPreview: `research-alpha error: ${err instanceof Error ? err.message : "failed"}`,
+    });
+    return;
+  }
+
+  /* ── Risk ── */
+  emit({
+    taskId,
+    type: "skill.invoked",
+    fromEns: ORCHESTRATOR_ENS,
+    toEns: sentinel.ensName,
+    skill: "score_risk",
+    layer: "gensyn",
+    payloadPreview: `Forwarding findings to ${sentinel.ensName} for risk scoring`,
+  });
+
+  let riskResult: Record<string, unknown>;
+  try {
+    riskResult = await scoreRisk({ task_id: taskId, findings: researchResult, threshold: 6.0 }) as Record<string, unknown>;
+    emit({
+      taskId,
+      type: "skill.responded",
+      fromEns: sentinel.ensName,
+      skill: "score_risk",
+      layer: "gensyn",
+      payloadPreview: `Risk score: ${riskResult.risk_score ?? "?"}/10 — decision: ${riskResult.decision ?? "?"}`,
+      data: riskResult,
+    });
+  } catch (err) {
+    emit({
+      taskId,
+      type: "execution.failed",
+      fromEns: sentinel.ensName,
+      layer: "gensyn",
+      payloadPreview: `risk-sentinel error: ${err instanceof Error ? err.message : "failed"}`,
+    });
+    return;
+  }
+
+  if (riskResult.decision !== "approved") {
+    emit({ taskId, type: "execution.failed", fromEns: sentinel.ensName, layer: "keeperhub", payloadPreview: `Risk rejected (score ${riskResult.risk_score}/10 < 6.0 threshold)` });
+    emit({ taskId, type: "task.completed", layer: "system", payloadPreview: "Task completed: no-go decision from risk-sentinel" });
+    return;
+  }
+
+  /* ── Execution ── */
+  emit({
+    taskId,
+    type: "skill.invoked",
+    fromEns: ORCHESTRATOR_ENS,
+    toEns: executor.ensName,
+    skill: "execute_intent",
+    layer: "gensyn",
+    payloadPreview: `Risk approved (${riskResult.risk_score}/10) — invoking execute_intent`,
+  });
+
+  try {
+    await executeIntent({
+      task_id: taskId,
+      original_prompt: task.prompt,
+      risk_score: riskResult.risk_score,
+      risk_rationale: riskResult.rationale,
+      approved: true,
+      requesting_peer: sentinel.axlPeerId ?? "direct",
+    });
+  } catch (err) {
+    emit({
+      taskId,
+      type: "execution.failed",
+      fromEns: executor.ensName,
+      layer: "keeperhub",
+      payloadPreview: err instanceof Error ? err.message : "Execution error",
+    });
+  }
+}
