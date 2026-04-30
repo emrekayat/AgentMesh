@@ -41,7 +41,7 @@ export default function RootLayout({
 
 function SiteHeader() {
   return (
-    <header className="sticky top-0 z-40 w-full border-b border-border/60 backdrop-blur supports-[backdrop-filter]:bg-background/40">
+    <header className="sticky top-0 z-40 w-full border-b border-border/60 backdrop-blur bg-background/40">
       <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-6">
         <Link href="/" className="flex items-center gap-2">
           <span className="relative inline-block h-2.5 w-2.5 rounded-full bg-gensyn">
