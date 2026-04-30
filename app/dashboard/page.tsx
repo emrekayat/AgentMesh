@@ -167,7 +167,7 @@ export default function DashboardPage() {
                     required
                     minLength={8}
                     maxLength={2000}
-                    className="min-h-[140px]"
+                    className="min-h-35"
                   />
                   <div className="text-right text-[11px] text-foreground-dim">{prompt.length} / 2000</div>
                 </div>
