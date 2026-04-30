@@ -35,46 +35,7 @@ export function SplashScreen() {
             }}
           />
 
-          {/* deep radial glow behind logo */}
-          <motion.div
-            className="absolute rounded-full"
-            style={{ background: "radial-gradient(circle, #6366f133 0%, #818cf810 40%, transparent 70%)" }}
-            initial={{ width: 300, height: 300, opacity: 0 }}
-            animate={
-              phase === "in"
-                ? { width: 700, height: 700, opacity: 1 }
-                : phase === "hold"
-                ? { width: 760, height: 760, opacity: 1 }
-                : { width: 900, height: 900, opacity: 0 }
-            }
-            transition={{ duration: 1.4, ease: "easeOut" }}
-          />
-
-          {/* ping ring 1 */}
-          <motion.div
-            className="absolute rounded-full border-2 border-indigo-500/30"
-            initial={{ width: 320, height: 320, opacity: 0 }}
-            animate={{ width: 600, height: 600, opacity: [0, 0.7, 0] }}
-            transition={{ duration: 2.2, ease: "easeOut", repeat: Infinity, delay: 0.3 }}
-          />
-
-          {/* ping ring 2 */}
-          <motion.div
-            className="absolute rounded-full border border-indigo-400/15"
-            initial={{ width: 320, height: 320, opacity: 0 }}
-            animate={{ width: 800, height: 800, opacity: [0, 0.4, 0] }}
-            transition={{ duration: 2.2, ease: "easeOut", repeat: Infinity, delay: 0.9 }}
-          />
-
-          {/* ping ring 3 — slow outer */}
-          <motion.div
-            className="absolute rounded-full border border-violet-500/10"
-            initial={{ width: 320, height: 320, opacity: 0 }}
-            animate={{ width: 1000, height: 1000, opacity: [0, 0.25, 0] }}
-            transition={{ duration: 2.8, ease: "easeOut", repeat: Infinity, delay: 1.4 }}
-          />
-
-          {/* content — shifted up */}
+          {/* everything together — shifted up so rings follow the logo */}
           <motion.div
             className="relative flex flex-col items-center gap-8"
             style={{ marginTop: "-80px" }}
@@ -91,9 +52,48 @@ export function SplashScreen() {
               ease: phase === "in" ? [0.16, 1, 0.3, 1] : "easeInOut",
             }}
           >
+            {/* deep radial glow */}
+            <motion.div
+              className="absolute left-1/2 top-37.5 -translate-x-1/2 -translate-y-1/2 rounded-full pointer-events-none"
+              style={{ background: "radial-gradient(circle, #6366f133 0%, #818cf810 40%, transparent 70%)" }}
+              initial={{ width: 300, height: 300, opacity: 0 }}
+              animate={
+                phase === "in"
+                  ? { width: 700, height: 700, opacity: 1 }
+                  : phase === "hold"
+                  ? { width: 760, height: 760, opacity: 1 }
+                  : { width: 900, height: 900, opacity: 0 }
+              }
+              transition={{ duration: 1.4, ease: "easeOut" }}
+            />
+
+            {/* ping ring 1 */}
+            <motion.div
+              className="absolute left-1/2 top-37.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-indigo-500/30 pointer-events-none"
+              initial={{ width: 320, height: 320, opacity: 0 }}
+              animate={{ width: 600, height: 600, opacity: [0, 0.7, 0] }}
+              transition={{ duration: 2.2, ease: "easeOut", repeat: Infinity, delay: 0.3 }}
+            />
+
+            {/* ping ring 2 */}
+            <motion.div
+              className="absolute left-1/2 top-37.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-indigo-400/15 pointer-events-none"
+              initial={{ width: 320, height: 320, opacity: 0 }}
+              animate={{ width: 800, height: 800, opacity: [0, 0.4, 0] }}
+              transition={{ duration: 2.2, ease: "easeOut", repeat: Infinity, delay: 0.9 }}
+            />
+
+            {/* ping ring 3 */}
+            <motion.div
+              className="absolute left-1/2 top-37.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-violet-500/10 pointer-events-none"
+              initial={{ width: 320, height: 320, opacity: 0 }}
+              animate={{ width: 1000, height: 1000, opacity: [0, 0.25, 0] }}
+              transition={{ duration: 2.8, ease: "easeOut", repeat: Infinity, delay: 1.4 }}
+            />
+
             {/* logo */}
             <motion.div
-              className="rounded-3xl overflow-hidden"
+              className="relative rounded-3xl overflow-hidden"
               animate={{
                 boxShadow: [
                   "0 0 50px #6366f140, 0 0 100px #6366f120, 0 24px 80px #00000080",
